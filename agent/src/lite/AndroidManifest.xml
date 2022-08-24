@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.bytedance.applog">
+
+    <application>
+        <service
+            android:name="com.volcengine.onekit.component.ComponentDiscoveryService"
+            android:exported="false">
+            <meta-data
+                android:name="com.bytedance.applog.onekit.AnalyticsComponentRegistrar"
+                android:value="com.volcengine.onekit.component.ComponentRegistrar"></meta-data>
+            <meta-data
+                android:name="com.bytedance.applog.onekit.DeviceComponentRegistrar"
+                android:value="com.volcengine.onekit.component.ComponentRegistrar"></meta-data>
+        </service>
+    </application>
+
+</manifest>

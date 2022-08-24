@@ -1,0 +1,10 @@
+apply plugin: 'java'
+apply plugin: 'maven-publish'
+
+dependencies {
+    compileOnly gradleApi()
+    compileOnly 'com.android.tools.build:gradle:3.5.3'
+    implementation 'org.ow2.asm:asm:9.2'
+}
+
+group = "com.bytedance.applog"

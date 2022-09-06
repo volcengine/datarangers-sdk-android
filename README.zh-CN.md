@@ -26,7 +26,6 @@ public class TheApplication extends Application {
       
         AppLog.init(this, config);
         /* 初始化结束 */
-        /* Initialization started */
      
     }
 }

@@ -2,7 +2,7 @@ English | [简体中文](./README.zh-CN.md)
 
 # DataRangers Android SDK
 ## Usage
-> For more information：[Integration Document](https://docs.byteplus.com/data-intelligence/reference/android-sdk-integration)
+> For more information：[Integration Document](https://www.volcengine.com/docs/6285/65980)
 
 ### 1. Initialize the SDK
 Initialize SDK in the Application.OnCreate (initialize as early as possible).
@@ -18,8 +18,7 @@ public class TheApplication extends Application {
      
         config.setUriConfig(UriConfig.createByDomain("your_report_url", null)); //data report url
         config.setAbEnable(true); // enables AB test    
-        config.setPicker(new Picker(this, config)); // Enables event monitoring
-        config.setAutoTrackEnabled (true); //Enables visual events
+        config.setAutoTrackEnabled(true); //Enables visual events
         config.setLogEnable(false); // true: have logs，false:no logs. `false` by default
         config.setH5CollectEnable (false);//Turn off embedded H5 events tracking
 

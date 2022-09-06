@@ -1,39 +1,85 @@
-# 增长分析营销套件 Android SDK
-## 接入
-> 参考官网接入文档：https://www.volcengine.com/docs/6285/65980
+English | [简体中文](./README.zh-CN.md)
 
-初始化 SDK
+# DataRangers Android SDK
+## Usage
+> For more information：[Integration Document](https://docs.byteplus.com/data-intelligence/reference/android-sdk-integration)
+
+### 1. Initialize the SDK
+Initialize SDK in the Application.OnCreate (initialize as early as possible).
 ```java
+// Demo Application
 public class TheApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        /* 初始化SDK开始 */
-        // 第一个参数APPID: 参考2.1节获取
-        // 第二个参数CHANNEL: 填写渠道，请注意不能为空
-        final InitConfig config = new InitConfig("{{APPID}}", "{{CHANNEL}}");
-        // 设置私有化部署数据上送地址，参考2.2节获取，{{REPORT_URL}} 例如 https://yourdomain.com，注意域名后不要加“/”
-        config.setUriConfig(UriConfig.createByDomain("{{REPORT_URL}}", null));
-        config.setAutoTrackEnabled(true); // 全埋点开关，true开启，false关闭
-        config.setLogEnable(false); // true:开启日志，参考4.3节设置logger，false:关闭日志
-        AppLog.setEncryptAndCompress(true); // 加密开关，true开启，false关闭
+     
+        /* Initialization started */
+        final InitConfig config = new InitConfig("your_appid", "your_channel"); // AppID and channel. Contact your customer success manager if you are not sure about the AppID.
+     
+        config.setUriConfig(UriConfig.createByDomain("your_report_url", null)); //data report url
+        config.setAbEnable(true); // enables AB test    
+        config.setPicker(new Picker(this, config)); // Enables event monitoring
+        config.setAutoTrackEnabled (true); //Enables visual events
+        config.setLogEnable(false); // true: have logs，false:no logs. `false` by default
+        config.setH5CollectEnable (false);//Turn off embedded H5 events tracking
+
+        // Enables encryptions and support to SDK 5.5.1 and above
+        AppLog.setEncryptAndCompress(true);
+      
         AppLog.init(this, config);
-        /* 初始化SDK结束 */
+        /* Initialization ended */
+     
     }
 }
 ```
-开启加密需要添加加密库或自定义加密
+### 2. Enable encryption for data report
+Use default encryption or custom encryption.
 ```groovy
-// 默认加密库
+// default encryption library
 implementation 'com.bytedance.frameworks:encryptor:0.0.9-rc.2-private'
 ```
 ```java
-// 自定义加密
+// custom encryption
 config.setEncryptor(
   new IEncryptor() {
     @Override
     public byte[] encrypt(byte[] bytes, int i) {
-      // 自定义加密
+      
     }
   });
 ```
+### 3. Report behavior tracking events through code
+User behavior logs take the form of events (event) + parameters (params) and one event can contain multiple parameters. In general, ensure that your tracking is in line with your businesses' overarching Tracking Plan which your product operations specialists/data analysts should have designed.
+
+Example: Reporting the play-video behavior of a user.
+```java
+// When the user clicks the Play button of a video
+// Report event only
+AppLog.onEventV3("play_video");
+
+
+// Or:
+
+// When the user clicks the Play button of a video
+// Report event + params
+JSONObject paramsObj = new JSONObject();
+try {
+    paramsObj.put("video_title", "Lady Gaga on Oscar"); //Event parameter：video title 
+    paramsObj.put("duration", 20); //Event parameter：play duration 
+} catch (JSONException e) { 
+    e.printStackTrace();
+}
+AppLog.onEventV3("play_video", paramsObj);
+```
+
+## License
+
+Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
+
+The DataRangers SDK was developed by Beijing Volcanoengine Technology Ltd. (hereinafter “Volcanoengine”). Any copyright or patent right is owned by and proprietary material of the Volcanoengine.
+
+DataRangers SDK is available under the Volcanoengine and licensed under the commercial license.  Customers can contact service@volcengine.com for commercial licensing options.  Here is also a link to subscription services agreement: https://www.volcengine.com/docs/6285/69647
+
+Without Volcanoengine's prior written permission, any use of DataRangers SDK, in particular any use for commercial purposes, is prohibited. This includes, without limitation, incorporation in a commercial product, use in a commercial service, or production of other artefacts for commercial purposes.
+
+Without Volcanoengine's prior written permission, the DataRangers SDK may not be reproduced, modified and/or made available in any form to any third party.

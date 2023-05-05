@@ -414,6 +414,7 @@ public class Api {
     }
 
     public JSONObject abConfig(String uri, final JSONObject request) {
+        HashMap<String, String> headers = getHeaders();
         String response = null;
         try {
             response =
@@ -422,7 +423,7 @@ public class Api {
                             .post(
                                     uri,
                                     encryptUtils.transformStrToByte(request.toString()),
-                                    CONTENT_TYPE);
+                                    headers);
         } catch (Exception e) {
             TLog.e(e);
         }

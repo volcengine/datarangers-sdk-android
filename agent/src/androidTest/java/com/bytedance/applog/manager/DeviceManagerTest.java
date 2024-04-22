@@ -7,9 +7,10 @@ import android.os.Handler;
 import android.os.Handler.Callback;
 import android.os.HandlerThread;
 import android.os.Message;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.rule.GrantPermissionRule;
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.rule.GrantPermissionRule;
+
 import android.util.Log;
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.BaseAppLogTest;
@@ -31,7 +32,7 @@ public class DeviceManagerTest extends BaseAppLogTest {
 
     @Test
     public void load() {
-        Context appContext = InstrumentationRegistry.getContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         final InitConfig config = new InitConfig("1234", "channel");
         config.clearDidAndIid("wsc");
         final ConfigManager cfgManger = new ConfigManager(appContext, config);

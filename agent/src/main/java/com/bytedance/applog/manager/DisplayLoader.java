@@ -6,8 +6,8 @@ import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.WindowManager;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -21,9 +21,11 @@ import java.lang.reflect.Method;
 class DisplayLoader extends BaseLoader {
 
     private final Context mApp;
+    private final AppLogInstance appLogInstance;
 
-    DisplayLoader(Context ctx) {
+    DisplayLoader(final AppLogInstance appLogInstance, Context ctx) {
         super(true, false);
+        this.appLogInstance = appLogInstance;
         mApp = ctx;
     }
 
@@ -92,8 +94,13 @@ class DisplayLoader extends BaseLoader {
                 }
             }
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error("Get screen pixels failed", e);
         }
         return new int[] {width, height};
+    }
+
+    @Override
+    protected String getName() {
+        return "Display";
     }
 }

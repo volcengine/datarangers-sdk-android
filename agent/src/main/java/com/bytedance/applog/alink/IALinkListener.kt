@@ -10,4 +10,7 @@ interface IALinkListener {
 
     @WorkerThread
     fun onAttributionData(routingInfo: Map<String, String?>?, exception: Exception?)
+
+    @WorkerThread
+    fun onAttributionFailedCallback(exception: Exception?)
 }

@@ -3,6 +3,8 @@ package com.bytedance.applog.util;
 
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import com.bytedance.applog.ISessionObserver;
 import com.bytedance.applog.holder.SessionObserverHolder;
 
@@ -122,12 +124,12 @@ public class SessionObserverHolderTest {
     public static class NonRefObserver implements ISessionObserver {
 
         @Override
-        public void onSessionStart(long id, String sessonId) {}
+        public void onSessionStart(long id, @NonNull String sessonId) {}
 
         @Override
-        public void onSessionTerminate(long id, String sessonId, JSONObject appLog) {}
+        public void onSessionTerminate(long id, @NonNull String sessonId, JSONObject appLog) {}
 
         @Override
-        public void onSessionBatchEvent(long id, String sessonId, JSONObject appLog) {}
+        public void onSessionBatchEvent(long id, @NonNull String sessonId, JSONObject appLog) {}
     }
 }

@@ -4,11 +4,12 @@ package com.bytedance.applog.game;
 import android.text.TextUtils;
 
 import com.bytedance.applog.AppLog;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -74,7 +75,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_TASK, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -113,7 +115,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_ACTIVITY, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -137,7 +140,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_UNLOCK, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -173,7 +177,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_RANK, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -206,7 +211,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_GUILD, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -233,7 +239,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_SNS, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -263,7 +270,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_SHARE, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 
@@ -290,7 +298,8 @@ public class OhayooGameHelper {
             fillOtherParams(otherParams, object);
             AppLog.onEventV3(GAME_BUTTONCLICK, object);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("OhayooGameHelper"), "JSON handle failed", e);
         }
     }
 

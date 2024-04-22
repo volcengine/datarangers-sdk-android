@@ -5,11 +5,12 @@ import android.text.TextUtils;
 
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.AppLogInstance;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -71,7 +72,8 @@ public class WhalerGameHelper {
             param.put("ad_position_type", adPositionType);
             param.put("ad_position", adPosition);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_AD_BUTTON_CLICK, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -95,7 +97,8 @@ public class WhalerGameHelper {
             param.put("ad_position_type", adPositionType);
             param.put("ad_position", adPosition);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_AD_SHOW, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -122,7 +125,8 @@ public class WhalerGameHelper {
             param.put("ad_position", adPosition);
             param.put("result", result);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_AD_SHOW_END, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -145,7 +149,8 @@ public class WhalerGameHelper {
             param.put("aflev", aflev);
             param.put("lev", lev);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_LEVELUP, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -161,7 +166,8 @@ public class WhalerGameHelper {
             fillOtherParams(otherParams, param);
             param.put("ectype_name", ectypeName);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_START_PLAY, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -195,7 +201,8 @@ public class WhalerGameHelper {
             param.put("result", result.gameResult);
             param.put("duration", duration);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_END_PLAY, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -234,7 +241,8 @@ public class WhalerGameHelper {
             param.put("is_success", isSuccess);
             param.put("currency_amount", currencyAmount);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(PURCHASE, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -256,7 +264,8 @@ public class WhalerGameHelper {
             param.put("coin_left", coinLeft);
             param.put("lev", lev);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_INIT_INFO, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -275,7 +284,8 @@ public class WhalerGameHelper {
             param.put("method", method);
             param.put("coin_num", coinNum);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_GET_COINS, param, AppLogInstance.BUSINESS_EVENT);
     }
@@ -294,7 +304,8 @@ public class WhalerGameHelper {
             param.put("method", method);
             param.put("coin_num", coinNum);
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WhalerGameHelper"), "JSON handle failed", e);
         }
         AppLog.onEventV3(GT_COST_COINS, param, AppLogInstance.BUSINESS_EVENT);
     }

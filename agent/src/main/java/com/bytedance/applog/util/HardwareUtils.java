@@ -9,7 +9,10 @@ import android.telephony.TelephonyManager;
 import android.view.Display;
 import android.view.WindowManager;
 
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.store.SharedPreferenceCacheHelper;
+
+import java.util.Collections;
 
 public class HardwareUtils {
 
@@ -24,15 +27,18 @@ public class HardwareUtils {
                             new SharedPreferenceCacheHelper.CacheLoader() {
                                 @Override
                                 public String load() throws Throwable {
-                                    TLog.d(
-                                            "[DeviceMeta] Try to get android id by secure.getString.");
+                                    LoggerImpl.global()
+                                            .debug(
+                                                    Collections.singletonList("HardwareUtils"),
+                                                    "[DeviceMeta] Try to get android id by secure.getString");
                                     return Settings.Secure.getString(
                                             context.getContentResolver(),
                                             Settings.Secure.ANDROID_ID);
                                 }
                             });
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("HardwareUtils"), "Get androidId failed", e);
             return null;
         }
     }

@@ -3,7 +3,8 @@ package com.bytedance.applog.event;
 
 import android.os.SystemClock;
 
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.IAppLogLogger;
+import com.bytedance.applog.log.LogInfo;
 
 /**
  * 时长事件对象
@@ -11,6 +12,8 @@ import com.bytedance.applog.util.TLog;
  * @author luodong.seu
  */
 public class DurationEvent {
+
+    private final IAppLogLogger logger;
 
     /** 事件名 */
     private final String event;
@@ -21,28 +24,39 @@ public class DurationEvent {
     /** 时长 */
     private long duration = 0L;
 
-    public DurationEvent(String event) {
+    public DurationEvent(IAppLogLogger logger, String event) {
+        this.logger = logger;
         this.event = event;
     }
 
     /** 开始计时 */
     public void start(long time) {
         startTime = time;
-        TLog.d("[DurationEvent:{}] Start at:{}", event, time);
+
+        if (null != logger) {
+            logger.debug(LogInfo.Category.EVENT, "[DurationEvent:{}] Start at:{}", event, time);
+        }
     }
 
     /** 继续计时 */
     public void resume(long time) {
         if (time > 0 && startTime < 0) {
             start(time);
-            TLog.d("[DurationEvent:{}] Resume at:{}", event, time);
+
+            if (null != logger) {
+                logger.debug(
+                        LogInfo.Category.EVENT, "[DurationEvent:{}] Resume at:{}", event, time);
+            }
         }
     }
 
     /** 暂停计时 */
     public void pause(long time) {
         if (time > 0 && startTime > 0) {
-            TLog.d("[DurationEvent:{}] Pause at:{}", event, time);
+            if (null != logger) {
+                logger.debug(LogInfo.Category.EVENT, "[DurationEvent:{}] Pause at:{}", event, time);
+            }
+
             duration += (time > startTime ? time : SystemClock.elapsedRealtime()) - startTime;
             startTime = -1L;
         }
@@ -55,11 +69,22 @@ public class DurationEvent {
      */
     public long end(long time) {
         if (time <= 0) {
-            TLog.w("End at illegal time: " + time);
+            if (null != logger) {
+                logger.warn(LogInfo.Category.EVENT, "End at illegal time: " + time);
+            }
             return 0;
         }
         pause(time);
-        TLog.d("[DurationEvent:{}] End[ at:{} and duration is {}ms.", event, time, duration);
+
+        if (null != logger) {
+            logger.debug(
+                    LogInfo.Category.EVENT,
+                    "[DurationEvent:{}] End[ at:{} and duration is {}ms",
+                    event,
+                    time,
+                    duration);
+        }
+
         return duration;
     }
 }

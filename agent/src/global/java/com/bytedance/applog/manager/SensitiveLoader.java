@@ -1,10 +1,6 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.manager;
 
-import android.content.Context;
-
-import com.bytedance.applog.ISensitiveInfoProvider;
-
 import org.json.JSONObject;
 
 /**
@@ -13,16 +9,17 @@ import org.json.JSONObject;
  */
 class SensitiveLoader extends BaseLoader {
 
-    SensitiveLoader(
-            Context ctx,
-            ConfigManager cfg,
-            DeviceManager deviceManager,
-            ISensitiveInfoProvider sensitiveInfoProvider) {
+    SensitiveLoader(DeviceManager deviceManager) {
         super(true, false);
     }
 
     @Override
     protected boolean doLoad(final JSONObject info) {
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "SensitiveLoader";
     }
 }

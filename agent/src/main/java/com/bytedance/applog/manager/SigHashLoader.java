@@ -3,12 +3,12 @@ package com.bytedance.applog.manager;
 
 import android.content.Context;
 import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.DigestUtils;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.PackageUtils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -20,21 +20,22 @@ import org.json.JSONObject;
 class SigHashLoader extends BaseLoader {
 
     private final Context mApp;
+    private final AppLogInstance appLogInstance;
 
-    SigHashLoader(Context ctx) {
+    SigHashLoader(AppLogInstance appLogInstance, Context ctx) {
         super(true, false);
+        this.appLogInstance = appLogInstance;
         mApp = ctx;
     }
 
     @Override
     protected boolean doLoad(final JSONObject info) throws JSONException {
         String sigHash = null;
-        PackageManager pm = mApp.getPackageManager();
         PackageInfo pkg = null;
         try {
-            pkg = pm.getPackageInfo(mApp.getPackageName(), PackageManager.GET_SIGNATURES);
+            pkg = PackageUtils.getPackageSignature(mApp, mApp.getPackageName());
         } catch (Throwable e) {
-            TLog.ysnp(e);
+            appLogInstance.getLogger().error("Get package info failed", e);
         }
         if (pkg != null && pkg.signatures != null && pkg.signatures.length > 0) {
             Signature sig = pkg.signatures[0];
@@ -47,5 +48,10 @@ class SigHashLoader extends BaseLoader {
             info.put(Api.KEY_SIG_HASH, sigHash);
         }
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "SigHash";
     }
 }

@@ -6,8 +6,9 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.bytedance.applog.engine.Engine;
 import com.bytedance.applog.manager.ConfigManager;
@@ -31,7 +32,7 @@ public class AppLogTest {
 
     @BeforeClass
     public static void setUpAppLog() throws InterruptedException {
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         InitConfig config = new InitConfig("1234", "channel");
         config.setAutoStart(false);
         config.setHandleLifeCycle(false);

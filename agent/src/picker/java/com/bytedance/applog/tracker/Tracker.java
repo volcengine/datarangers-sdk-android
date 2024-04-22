@@ -1,16 +1,15 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.tracker;
 
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.Presentation;
 import android.content.DialogInterface;
 import android.location.Location;
-import android.support.v4.app.Fragment;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.AdapterView;
+import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.ExpandableListView;
 import android.widget.RadioGroup;
@@ -21,12 +20,16 @@ import android.widget.TextView;
 import com.bytedance.applog.AppLogHelper;
 import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.collector.Navigator;
+import com.bytedance.applog.event.AutoTrackEventType;
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.store.Click;
 import com.bytedance.applog.util.ClassHelper;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.ReflectUtils;
 import com.bytedance.applog.util.ViewHelper;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,7 +37,7 @@ import java.util.Map;
  * @date 2019/1/16
  */
 public class Tracker {
-
+    private static final List<String> loggerTags = Collections.singletonList("Tracker");
     private static float sRawX;
     private static float sRawY;
     private static int[] sLocation = new int[2];
@@ -77,15 +80,19 @@ public class Tracker {
                 }
                 sRawX = 0;
                 sRawY = 0;
-                TLog.d(
-                        "tracker:on click: width = "
-                                + v.getWidth()
-                                + " height = "
-                                + v.getHeight()
-                                + " touchX = "
-                                + vi.touchX
-                                + " touchY = "
-                                + vi.touchY);
+
+                LoggerImpl.global()
+                        .debug(
+                                loggerTags,
+                                "tracker:on click: width = "
+                                        + v.getWidth()
+                                        + " height = "
+                                        + v.getHeight()
+                                        + " touchX = "
+                                        + vi.touchX
+                                        + " touchY = "
+                                        + vi.touchY);
+
                 AppLogHelper.handleAll(
                         new AppLogHelper.AppLogInstanceHandler() {
                             @Override
@@ -96,23 +103,28 @@ public class Tracker {
                                 if (instance.isAutoTrackClickIgnored(v)) {
                                     return;
                                 }
+                                if (null != instance.getInitConfig()
+                                        && !AutoTrackEventType.hasEventType(
+                                                instance.getInitConfig().getAutoTrackEventType(),
+                                                AutoTrackEventType.CLICK)) {
+                                    return;
+                                }
                                 vi.properties = instance.getViewProperties(v);
                                 instance.receive(vi.clone());
                             }
                         });
             } else {
-                TLog.ysnp(null);
+                LoggerImpl.global().error(loggerTags, "Cannot get view info");
             }
         }
     }
 
     public static void onClick(DialogInterface dialog, int which) {
-        if (dialog instanceof AlertDialog) {
-            onClick(((AlertDialog) dialog).getButton(which));
-        } else if (ClassHelper.isSupportAlertDialog(dialog)) {
-            onClick(((android.support.v7.app.AlertDialog) dialog).getButton(which));
-        } else if (ClassHelper.isAndroidXAlertDialog(dialog)) {
-            onClick(((androidx.appcompat.app.AlertDialog) dialog).getButton(which));
+        try {
+            Method method = dialog.getClass().getMethod("getButton");
+            onClick((Button) method.invoke(dialog, which));
+        } catch (Throwable e) {
+            e.printStackTrace();
         }
     }
 
@@ -156,7 +168,8 @@ public class Tracker {
     }
 
     /* onResume */
-    public static void onResume(Fragment fragment) {
+    public static void onResume(Object fragment) {
+        if (fragment == null || !ReflectUtils.isInstance(fragment, "android.support.v4.app.Fragment")) return;
         Navigator.onFragResume(fragment);
     }
 
@@ -181,7 +194,8 @@ public class Tracker {
     }
 
     /* onPause */
-    public static void onPause(Fragment fragment) {
+    public static void onPause(Object fragment) {
+        if (fragment == null || !ReflectUtils.isInstance(fragment, "android.support.v4.app.Fragment")) return;
         Navigator.onFragPause(fragment);
     }
 
@@ -206,11 +220,12 @@ public class Tracker {
     }
 
     /* onHiddenChanged */
-    public static void onHiddenChanged(Fragment fragment, boolean hidden) {
+    public static void onHiddenChanged(Object fragment, boolean hidden) {
+        if (fragment == null || !ReflectUtils.isInstance(fragment, "android.support.v4.app.Fragment")) return;
         if (hidden) {
             Navigator.onFragPause(fragment);
         } else {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         }
     }
 
@@ -218,7 +233,7 @@ public class Tracker {
         if (hidden) {
             Navigator.onFragPause(fragment);
         } else {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         }
     }
 
@@ -226,7 +241,7 @@ public class Tracker {
         if (hidden) {
             Navigator.onFragPause(fragment);
         } else {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         }
     }
 
@@ -235,7 +250,7 @@ public class Tracker {
         if (hidden) {
             Navigator.onFragPause(fragment);
         } else {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         }
     }
 
@@ -243,7 +258,7 @@ public class Tracker {
         if (hidden) {
             Navigator.onFragPause(fragment);
         } else {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         }
     }
 
@@ -251,14 +266,15 @@ public class Tracker {
         if (hidden) {
             Navigator.onFragPause(fragment);
         } else {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         }
     }
 
     /* setUserVisibleHint */
-    public static void setUserVisibleHint(Fragment fragment, boolean visible) {
+    public static void setUserVisibleHint(Object fragment, boolean visible) {
+        if (fragment == null || !ReflectUtils.isInstance(fragment, "android.support.v4.app.Fragment")) return;
         if (visible) {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         } else {
             Navigator.onFragPause(fragment);
         }
@@ -266,7 +282,7 @@ public class Tracker {
 
     public static void setUserVisibleHint(android.app.Fragment fragment, boolean visible) {
         if (visible) {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         } else {
             Navigator.onFragPause(fragment);
         }
@@ -275,7 +291,7 @@ public class Tracker {
     public static void setUserVisibleHint(
             android.webkit.WebViewFragment fragment, boolean visible) {
         if (visible) {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         } else {
             Navigator.onFragPause(fragment);
         }
@@ -284,7 +300,7 @@ public class Tracker {
     public static void setUserVisibleHint(
             android.preference.PreferenceFragment fragment, boolean visible) {
         if (visible) {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         } else {
             Navigator.onFragPause(fragment);
         }
@@ -292,7 +308,7 @@ public class Tracker {
 
     public static void setUserVisibleHint(android.app.ListFragment fragment, boolean visible) {
         if (visible) {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         } else {
             Navigator.onFragPause(fragment);
         }
@@ -301,7 +317,7 @@ public class Tracker {
     public static void setUserVisibleHint(
             androidx.fragment.app.Fragment fragment, boolean visible) {
         if (visible) {
-            Navigator.onFragResume(fragment);
+            Navigator.onFragResume(fragment, true);
         } else {
             Navigator.onFragPause(fragment);
         }
@@ -334,7 +350,7 @@ public class Tracker {
             Method method = clazz.getMethod("loadUrl", String.class);
             method.invoke(webView, url);
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global().error(loggerTags, "Reflect loadUrl:{} failed", e, url);
         }
     }
 
@@ -351,7 +367,7 @@ public class Tracker {
             Method method = clazz.getMethod("loadUrl", String.class, Map.class);
             method.invoke(webView, url, headers);
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global().error(loggerTags, "Reflect loadUrl:{} with header failed", e, url);
         }
     }
 
@@ -368,7 +384,7 @@ public class Tracker {
             Method method = clazz.getMethod("loadData", String.class, String.class, String.class);
             method.invoke(webView, data, mimeType, encoding);
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global().error(loggerTags, "Reflect loadData failed", e);
         }
     }
 
@@ -398,7 +414,7 @@ public class Tracker {
                             String.class);
             method.invoke(webView, baseUrl, data, mimeType, encoding, failUrl);
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global().error(loggerTags, "Reflect loadDataWithBaseURL failed", e);
         }
     }
 
@@ -411,18 +427,16 @@ public class Tracker {
                 Object url = method.invoke(view);
                 if (null != url) {
                     String targetUrl = String.valueOf(url);
-                    WebViewUtil.injectWebViewBridges(view, targetUrl);
                     WebViewUtil.injectWebViewJsCode(view, targetUrl);
                 }
             } catch (Throwable e) {
-                TLog.e(e);
+                LoggerImpl.global().error(loggerTags, "Inject onProgressChanged failed", e);
             }
         }
     }
 
     public static void dispatchTouchEvent(MotionEvent ev) {
         if (ev.getAction() == MotionEvent.ACTION_UP) {
-            TLog.d("tracker:enter dispatchTouchEvent");
             sRawX = ev.getRawX();
             sRawY = ev.getRawY();
         }

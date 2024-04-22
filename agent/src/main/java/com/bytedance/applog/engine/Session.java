@@ -7,14 +7,20 @@ import android.text.TextUtils;
 import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.IAppLogInstance;
 import com.bytedance.applog.collector.Navigator;
+import com.bytedance.applog.exception.ExceptionHandler;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.manager.DeviceManager;
 import com.bytedance.applog.store.BaseData;
+import com.bytedance.applog.store.EventV3;
 import com.bytedance.applog.store.Launch;
 import com.bytedance.applog.store.Page;
 import com.bytedance.applog.store.Terminate;
 import com.bytedance.applog.util.NetworkUtils;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.Utils;
+
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -50,7 +56,7 @@ public class Session {
 
     private String mId;
 
-    private static final AtomicLong sEventId = new AtomicLong();
+    private static final AtomicLong sEventId = new AtomicLong(1000L);
 
     private volatile long mLastPlayTs;
 
@@ -66,11 +72,16 @@ public class Session {
 
     private String mLastDay;
 
-    /** 第一次切换uuid前，最近的一次前台launch的session id */
+    /**
+     * 第一次切换uuid前，最近的一次前台launch的session id
+     */
     private volatile String mLastFgId;
 
-    /** 是否是从后台切换到前台 */
+    /**
+     * 是否是从后台切换到前台
+     */
     private volatile boolean resumeFromBackground = false;
+    private volatile boolean hasNewSession = false;
 
     Session(Engine engine) {
         mEngine = engine;
@@ -120,19 +131,37 @@ public class Session {
     /**
      * 启动一个Session
      *
-     * @param data 当前处理的事件
+     * @param data     当前处理的事件
      * @param saveList 要保存的数据列表
-     * @param hasUi 是否是在前台（在init之后）
+     * @param hasUi    是否是在前台（在init之后）
      * @return Launch
      */
     synchronized Launch startSession(
-            final IAppLogInstance appLogInstance,
+            final AppLogInstance appLogInstance,
             final BaseData data,
             final List<BaseData> saveList,
             final boolean hasUi) {
         final long ts = data instanceof TermTrigger ? -1 : data.ts;
 
         mId = UUID.randomUUID().toString();
+
+        LogUtils.sendJsonFetcher(
+                "session_start",
+                new EventBus.DataFetcher() {
+                    @Override
+                    public Object fetch() {
+                        JSONObject data = new JSONObject();
+                        try {
+                            data.put("appId", appLogInstance.getAppId());
+                            data.put("sessionId", mId);
+                            data.put("isBackground", !hasUi);
+                            data.put("newLaunch", ts != -1);
+                        } catch (Throwable ignored) {
+                        }
+                        return data;
+                    }
+                });
+
         if (hasUi && !mEngine.mUuidChanged && TextUtils.isEmpty(mLastFgId)) {
             mLastFgId = mId;
         }
@@ -179,7 +208,8 @@ public class Session {
             launch.verName = mEngine.getDm().getVersionName();
             launch.verCode = mEngine.getDm().getVersionCode();
             launch.uid = sUserId;
-            launch.uuid = appLogInstance.getUserUniqueID();
+            launch.uuid = mEngine.getDm().getUserUniqueId();
+            launch.uuidType = mEngine.getDm().getUserUniqueIdType();
             launch.ssid = appLogInstance.getSsid();
             launch.abSdkVersion = appLogInstance.getAbSdkVersion();
             launch.isFirstTime = hasUi ? mEngine.getConfig().getIsFirstTimeLaunch() : 0;
@@ -199,14 +229,14 @@ public class Session {
                 // 从后台进入前台后，重置launch标志
                 resumeFromBackground = false;
             }
-
+            this.mEngine.getAppLog().getLogger().debug("fillSessionParams launch: " + launch);
             saveList.add(launch);
         }
         if (mEngine.getAppLog().getLaunchFrom() <= 0) {
             mEngine.getAppLog().setLaunchFrom(6);
         }
 
-        TLog.d("startSession" + ", " + (mHadUi ? "fg" : "bg") + ", " + mId);
+        appLogInstance.getLogger().debug("Start new session:{} with background:{}", mId, !mHadUi);
         return launch;
     }
 
@@ -219,37 +249,44 @@ public class Session {
     }
 
     /**
-     * 处理每一个事件，增加辅助信息，将需要存储的事件放到{@param saveList}中.
+     * 处理每一个事件，增加辅助信息，将需要存储的事件放到{@param saveList}中, 并记录是否切换了session
      *
-     * @param data data
+     * @param data     data
      * @param saveList save
-     * @return 是否切换了session
      */
-    boolean process(
-            final IAppLogInstance appLogInstance, BaseData data, ArrayList<BaseData> saveList) {
-        final boolean isPage = data instanceof Page;
-        final boolean isResume = Session.isResumeEvent(data);
-        boolean sessionChanged = true;
-        if (mStartTs == -1) {
-            // 全新启动，生成一个session
-            startSession(appLogInstance, data, saveList, isResume);
-        } else if (!mHadUi && isResume) {
-            // 首次切换到前台，生成一个session
-            startSession(appLogInstance, data, saveList, true);
-        } else if (mLastPauseTs != 0L
-                && data.ts > mLastPauseTs + mEngine.getConfig().getSessionLife()) {
-            // 只要是进入后台，就设置resumeFromBackground = true，进入前台且发送Launch事件后重置为false
-            resumeFromBackground = true;
+    public void process(
+            final AppLogInstance appLogInstance, BaseData data, List<BaseData> saveList) {
+        if (mEngine.getConfig().isMainProcess()) {
+            final boolean isResume = Session.isResumeEvent(data);
+            boolean sessionChanged = true;
+            if (mStartTs == -1) {
+                // 全新启动，生成一个session
+                startSession(appLogInstance, data, saveList, isResume);
+            } else if (!mHadUi && isResume) {
+                // 首次切换到前台，生成一个session
+                startSession(appLogInstance, data, saveList, true);
+            } else if (mLastPauseTs != 0L
+                    && data.ts > mLastPauseTs + mEngine.getConfig().getSessionLife()) {
+                // 只要是进入后台，就设置resumeFromBackground = true，进入前台且发送Launch事件后重置为false
+                resumeFromBackground = true;
 
-            // 有ui的session，在后台停留时间超过一定时间，则结束session。若非TermTrigger，则重启动一个新session
-            startSession(appLogInstance, data, saveList, isResume);
-        } else if (mStartTs > data.ts + 2 * 60 * 60 * 1000) {
-            // 启动时间比事件生成时间晚，可能是调整时间了，重新生成一个session。
-            startSession(appLogInstance, data, saveList, isResume);
-        } else {
-            sessionChanged = false;
+                // 有ui的session，在后台停留时间超过一定时间，则结束session。若非TermTrigger，则重启动一个新session
+                startSession(appLogInstance, data, saveList, isResume);
+            } else if (mStartTs > data.ts + 2 * 60 * 60 * 1000) {
+                // 启动时间比事件生成时间晚，可能是调整时间了，重新生成一个session。
+                startSession(appLogInstance, data, saveList, isResume);
+            } else {
+                sessionChanged = false;
+            }
+
+            fillSessionParams(appLogInstance, data);
+            hasNewSession = sessionChanged;
         }
+    }
 
+    void addDataToList(BaseData data, List<BaseData> saveList,
+                       final AppLogInstance appLogInstance) {
+        final boolean isPage = data instanceof Page;
         if (isPage) {
             Page page = (Page) data;
             if (page.isResumeEvent()) {
@@ -261,11 +298,11 @@ public class Session {
                 if (TextUtils.isEmpty(page.last)) {
                     if (mLastFragment != null
                             && page.ts - mLastFragment.ts - mLastFragment.duration
-                                    < Navigator.DELAY_MULTY_PROC) {
+                            < Navigator.DELAY_MULTY_PROC) {
                         page.last = mLastFragment.name;
                     } else if (mLastActivity != null
                             && page.ts - mLastActivity.ts - mLastActivity.duration
-                                    < Navigator.DELAY_MULTY_PROC) {
+                            < Navigator.DELAY_MULTY_PROC) {
                         page.last = mLastActivity.name;
                     }
                 }
@@ -290,9 +327,6 @@ public class Session {
         } else if (!(data instanceof TermTrigger)) {
             saveList.add(data);
         }
-
-        fillSessionParams(appLogInstance, data);
-        return sessionChanged;
     }
 
     public void fillSessionParams(IAppLogInstance appLogInstance, BaseData data) {
@@ -301,11 +335,22 @@ public class Session {
             data.setAppId(appLogInstance.getAppId());
             data.uid = sUserId;
             data.uuid = device.getUserUniqueId();
+            data.uuidType = device.getUserUniqueIdType();
             data.ssid = device.getSsid();
             data.sid = mId;
             data.eid = nextEventId();
-            data.abSdkVersion = device.getAbSdkVersion();
+            data.abSdkVersion = device.getAbSdkVersionAndMergeCustomVid(data.abSdkVersion);
             data.nt = NetworkUtils.getNetworkTypeFast(mEngine.getContext()).getValue();
+            if (data instanceof EventV3
+                    && mStartTs > 0
+                    && Utils.equals(((EventV3) data).getEvent(), ExceptionHandler.CRASH_EVENT)
+                    && null != data.properties) {
+                try {
+                    data.properties.put("$session_duration", System.currentTimeMillis() - mStartTs);
+                } catch (Throwable ignored) {
+                }
+            }
+            this.mEngine.getAppLog().getLogger().debug("fillSessionParams data: " + data);
         }
     }
 
@@ -313,7 +358,15 @@ public class Session {
         return sEventId.incrementAndGet();
     }
 
-    /** 辅助事件，仅用来触发切后台的超时。 */
+    public boolean hasNewSession() {
+        boolean hasNewSession = this.hasNewSession;
+        this.hasNewSession = false;
+        return hasNewSession;
+    }
+
+    /**
+     * 辅助事件，仅用来触发切后台的超时。
+     */
     private static class TermTrigger extends Terminate {
         // nothing to do
     }

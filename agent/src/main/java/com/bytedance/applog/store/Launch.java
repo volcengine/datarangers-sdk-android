@@ -9,8 +9,8 @@ import androidx.annotation.NonNull;
 
 import com.bytedance.applog.AppLogHelper;
 import com.bytedance.applog.IAppLogInstance;
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -104,7 +104,7 @@ public class Launch extends BaseData {
 
     @Override
     protected void writeIpc(@NonNull final JSONObject obj) {
-        TLog.ysnp(null);
+        getLogger().error(LogInfo.Category.EVENT, loggerTags, "Not allowed");
     }
 
     @Override
@@ -117,7 +117,9 @@ public class Launch extends BaseData {
             obj.put(COL_UID, uid);
         }
         obj.put(COL_UUID, TextUtils.isEmpty(uuid) ? JSONObject.NULL : uuid);
-
+        if (!TextUtils.isEmpty(uuidType)) {
+            obj.put(Api.KEY_USER_UNIQUE_ID_TYPE_NEW, uuidType);
+        }
         if (!TextUtils.isEmpty(ssid)) {
             obj.put(COL_SSID, ssid);
         }
@@ -158,7 +160,7 @@ public class Launch extends BaseData {
 
     @Override
     protected BaseData readIpc(@NonNull final JSONObject obj) {
-        TLog.ysnp(null);
+        getLogger().error(LogInfo.Category.EVENT, loggerTags, "Not allowed");
         return null;
     }
 

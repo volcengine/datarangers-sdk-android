@@ -1,7 +1,10 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.util;
 
+import com.bytedance.applog.log.LoggerImpl;
+
 import java.lang.reflect.Field;
+import java.util.Collections;
 
 /**
  * 反射工具类
@@ -28,7 +31,7 @@ public class ReflectUtils {
      * 是否为指定的类的实例
      *
      * @param object 对象
-     * @param args 类名列表
+     * @param args   类名列表
      * @return true: 是
      */
     public static boolean isInstance(Object object, String... args) {
@@ -66,7 +69,7 @@ public class ReflectUtils {
     /**
      * 反射获取某个属性的值
      *
-     * @param object 对象
+     * @param object    对象
      * @param fieldName 字段名
      * @return Object
      */
@@ -74,14 +77,49 @@ public class ReflectUtils {
         if (null == object) {
             return null;
         }
-
-        try {
-            Field field = object.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            return field.get(object);
-        } catch (Throwable e) {
-            TLog.e(e);
+        Class<?> type = object.getClass();
+        while (type != null) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(object);
+            } catch (Throwable ignore) {
+            }
+            type = type.getSuperclass();
         }
+        LoggerImpl.global()
+                .warn(Collections.singletonList("ReflectUtils"), "Get field value failed: " + fieldName);
+        return null;
+    }
+
+    /**
+     * 通过类型获取属性
+     *
+     * @param object    对象
+     * @param fieldType 字段类型
+     * @return Object
+     */
+    public static Field getFieldByType(Object object, Class<?> fieldType) {
+        if (null == object || fieldType == null) {
+            return null;
+        }
+        Class<?> type = object.getClass();
+        while (type != null) {
+            try {
+                Field[] fields = type.getDeclaredFields();
+                for (Field field : fields) {
+                    field.setAccessible(true);
+                    Object value = field.get(object);
+                    if (fieldType.isInstance(value)) {
+                        return field;
+                    }
+                }
+            } catch (Throwable ignore) {
+            }
+            type = type.getSuperclass();
+        }
+        LoggerImpl.global()
+                .warn(Collections.singletonList("ReflectUtils"), "Get field value by type failed: " + fieldType);
         return null;
     }
 }

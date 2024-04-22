@@ -6,7 +6,6 @@ package com.bytedance.applog.network;
  * Created by luoqiaoyou on 2020-01-14.
  */
 public class RangersHttpException extends Exception {
-
     private int mResponseCode;
 
     public RangersHttpException(int status, String exceptionStr) {

@@ -3,7 +3,6 @@ package com.bytedance.applog.engine;
 
 import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.util.NetworkUtils;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 
@@ -19,7 +18,7 @@ public abstract class BaseWorker {
 
     private long mLastTime;
 
-    private boolean mStop;
+    private volatile boolean mStop;
 
     protected final Engine mEngine;
     protected final AppLogInstance appLogInstance;
@@ -57,8 +56,8 @@ public abstract class BaseWorker {
 
     private long checkWorkTime() {
         long nextTime;
-        if (needNet() && !NetworkUtils.isNetworkAvailableFast(mEngine.getContext())) {
-            TLog.d("checkWorkTime" + ", " + "0");
+        if (needNet() && !NetworkUtils.isNetworkAvailableFast(mEngine.getContext(), mEngine.isResume())) {
+            mEngine.getAppLog().getLogger().debug("Check work time is not net available.");
             nextTime = System.currentTimeMillis() + Engine.TIME_CHECK_INTERVAL;
         } else {
             long interval = 0;
@@ -77,10 +76,11 @@ public abstract class BaseWorker {
 
     private long work() {
         boolean worked = false;
+        mEngine.getAppLog().getLogger().debug("The worker:{} start to work...", this.getName());
         try {
             worked = doWork();
         } catch (Throwable e) {
-            TLog.ysnp(e);
+            mEngine.getAppLog().getLogger().error("Work do failed.", e);
         } finally {
             mLastTime = System.currentTimeMillis();
             if (worked) {
@@ -88,7 +88,12 @@ public abstract class BaseWorker {
             } else {
                 ++mFailCount;
             }
-            TLog.d("The worker:" + this.getName() + " worked " + (worked ? "success" : "failed"));
+            mEngine.getAppLog()
+                    .getLogger()
+                    .debug(
+                            "The worker:{} worked:{}.",
+                            this.getName(),
+                            worked ? "success" : "failed");
         }
         return checkWorkTime();
     }

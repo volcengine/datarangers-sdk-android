@@ -5,18 +5,23 @@ import android.app.Activity;
 import android.text.TextUtils;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.ILogger;
 import com.bytedance.applog.InitConfig;
 import com.bytedance.applog.UriConfig;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Collections;
+
 /**
- * @author: liujunlin
- * @date: 2021/5/7
+ * @author liujunlin
+ * @date 2021/5/7
  *     <p>TODO: 支持多实例
  */
 public class UnityPlugin {
@@ -39,7 +44,8 @@ public class UnityPlugin {
         try {
             AppLog.onEventV3(event, new JSONObject(params));
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("UnityPlugin"), "JSON handle failed", e);
         }
     }
 
@@ -57,7 +63,7 @@ public class UnityPlugin {
             initConfig.setLogger(
                     new ILogger() {
                         @Override
-                        public void log(String msg, Throwable t) {
+                        public void log(@NonNull String msg, @Nullable Throwable t) {
                             Log.d("AppLog", msg, t);
                         }
                     });
@@ -80,7 +86,8 @@ public class UnityPlugin {
         try {
             AppLog.profileSet(new JSONObject(params));
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("UnityPlugin"), "JSON handle failed", e);
         }
     }
 
@@ -88,7 +95,8 @@ public class UnityPlugin {
         try {
             AppLog.profileAppend(new JSONObject(params));
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("UnityPlugin"), "JSON handle failed", e);
         }
     }
 
@@ -96,7 +104,8 @@ public class UnityPlugin {
         try {
             AppLog.profileSetOnce(new JSONObject(params));
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("UnityPlugin"), "JSON handle failed", e);
         }
     }
 
@@ -108,7 +117,8 @@ public class UnityPlugin {
         try {
             AppLog.profileIncrement(new JSONObject(params));
         } catch (JSONException e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("UnityPlugin"), "JSON handle failed", e);
         }
     }
 

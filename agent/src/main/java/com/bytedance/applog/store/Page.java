@@ -7,6 +7,9 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
+import com.bytedance.applog.server.Api;
+import com.bytedance.applog.util.Utils;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -22,14 +25,17 @@ public class Page extends BaseData {
 
     public static final String EVENT_KEY = "bav2b_page";
     public static final String COL_NAME = "page_key";
-    private static final String COL_FROM = "refer_page_key";
+    public static final String COL_FROM = "refer_page_key";
     public static final String COL_TITLE = "page_title";
-    private static final String COL_TITLE_FROM = "refer_page_title";
-    private static final String COL_PATH = "page_path";
-    private static final String COL_PATH_FROM = "referrer_page_path";
+    public static final String COL_TITLE_FROM = "refer_page_title";
+    public static final String COL_PATH = "page_path";
+    public static final String COL_PATH_FROM = "referrer_page_path";
     public static final String COL_DURATION = "duration";
-    private static final String COL_BACK = "is_back";
-    private static final String COL_LAST_SESSION = "last_session";
+    public static final String COL_BACK = "is_back";
+    public static final String COL_LAST_SESSION = "last_session";
+    public static final String COL_IS_CUSTOM = "is_custom";
+    public static final String COL_IS_FRAGMENT = "is_fragment";
+    public static final String COL_RESUME_AT = "resume_at";
     public static final String TABLE = "page";
     public long duration;
     public String last;
@@ -40,9 +46,15 @@ public class Page extends BaseData {
     public String referTitle;
     public String path;
     public String referPath;
+    public long resumeAt;
 
     public int back;
     public String lastSession;
+
+    // 是否为自定义的页面
+    public boolean isCustom;
+    // 是否为fragment
+    public boolean isFragment;
 
     /** 类型，用于过滤 */
     public Class<?> clazz;
@@ -54,15 +66,30 @@ public class Page extends BaseData {
         def.addAll(sd);
         def.addAll(
                 Arrays.asList(
-                        COL_NAME, "varchar",
-                        COL_FROM, "varchar",
-                        COL_DURATION, "integer",
-                        COL_BACK, "integer",
-                        COL_LAST_SESSION, "varchar",
-                        COL_TITLE, "varchar",
-                        COL_TITLE_FROM, "varchar",
-                        COL_PATH, "varchar",
-                        COL_PATH_FROM, "varchar"));
+                        COL_NAME,
+                        "varchar",
+                        COL_FROM,
+                        "varchar",
+                        COL_DURATION,
+                        "integer",
+                        COL_BACK,
+                        "integer",
+                        COL_LAST_SESSION,
+                        "varchar",
+                        COL_TITLE,
+                        "varchar",
+                        COL_TITLE_FROM,
+                        "varchar",
+                        COL_PATH,
+                        "varchar",
+                        COL_PATH_FROM,
+                        "varchar",
+                        COL_IS_CUSTOM,
+                        "integer",
+                        COL_IS_FRAGMENT,
+                        "integer",
+                        COL_RESUME_AT,
+                        "integer"));
         return def;
     }
 
@@ -78,13 +105,16 @@ public class Page extends BaseData {
         referTitle = c.getString(i++);
         path = c.getString(i++);
         referPath = c.getString(i++);
+        isCustom = c.getInt(i++) == 1;
+        isFragment = c.getInt(i++) == 1;
+        resumeAt = c.getLong(i++);
         return i;
     }
 
     @Override
     protected void writeDb(@NonNull final ContentValues cv) {
         super.writeDb(cv);
-        cv.put(COL_NAME, name);
+        cv.put(COL_NAME, getName());
         cv.put(COL_FROM, last);
         cv.put(COL_DURATION, duration);
         cv.put(COL_BACK, back);
@@ -93,12 +123,15 @@ public class Page extends BaseData {
         cv.put(COL_TITLE_FROM, referTitle);
         cv.put(COL_PATH, path);
         cv.put(COL_PATH_FROM, referPath);
+        cv.put(COL_IS_CUSTOM, isCustom ? 1 : 0);
+        cv.put(COL_IS_FRAGMENT, isFragment ? 1 : 0);
+        cv.put(COL_RESUME_AT, resumeAt > 0 ? resumeAt : ts);
     }
 
     @Override
     protected void writeIpc(@NonNull final JSONObject obj) throws JSONException {
         super.writeIpc(obj);
-        obj.put(COL_NAME, name);
+        obj.put(COL_NAME, getName());
         obj.put(COL_FROM, last);
         obj.put(COL_DURATION, duration);
         obj.put(COL_BACK, back);
@@ -106,46 +139,56 @@ public class Page extends BaseData {
         obj.put(COL_TITLE_FROM, referTitle);
         obj.put(COL_PATH, path);
         obj.put(COL_PATH_FROM, referPath);
+        obj.put(COL_IS_CUSTOM, isCustom);
+        obj.put(COL_IS_FRAGMENT, isFragment);
+        obj.put(COL_RESUME_AT, resumeAt);
     }
 
     @Override
     protected BaseData readIpc(@NonNull final JSONObject obj) {
         super.readIpc(obj);
-        name = obj.optString(COL_NAME, null);
+        name = obj.optString(COL_NAME, "");
         last = obj.optString(COL_FROM, null);
         duration = obj.optLong(COL_DURATION, 0L);
         back = obj.optInt(COL_BACK, 0);
-        title = obj.optString(COL_TITLE, null);
+        title = obj.optString(COL_TITLE, "");
         referTitle = obj.optString(COL_TITLE_FROM, null);
         path = obj.optString(COL_PATH, null);
         referPath = obj.optString(COL_PATH_FROM, null);
+        isCustom = obj.optBoolean(COL_IS_CUSTOM, false);
+        isFragment = obj.optBoolean(COL_IS_FRAGMENT, false);
+        resumeAt = obj.optLong(COL_RESUME_AT, 0L);
         return this;
     }
 
     @Override
     protected JSONObject writePack() throws JSONException {
         JSONObject obj = new JSONObject();
-        obj.put(COL_TS, ts);
+        long pageTs = resumeAt > 0 ? resumeAt : ts;
+        obj.put(COL_TS, pageTs);
+        obj.put(COL_DATE_TIME, formatDateMS(pageTs));
         obj.put(COL_EID, eid);
         obj.put(COL_SID, sid);
         if (uid > 0L) {
             obj.put(COL_UID, uid);
         }
         obj.put(COL_UUID, TextUtils.isEmpty(uuid) ? JSONObject.NULL : uuid);
-
+        if (!TextUtils.isEmpty(uuidType)) {
+            obj.put(Api.KEY_USER_UNIQUE_ID_TYPE_NEW, uuidType);
+        }
         if (!TextUtils.isEmpty(ssid)) {
             obj.put(COL_SSID, ssid);
         }
         obj.put(EventV3.COL_EVENT, EVENT_KEY);
         obj.put(EventV3.COL_BAV, 1);
         mergePropsToParams(obj, fillParam());
-        obj.put(COL_DATE_TIME, mDT);
+
         return obj;
     }
 
     private JSONObject fillParam() throws JSONException {
         JSONObject p = new JSONObject();
-        p.put(COL_NAME, name);
+        p.put(COL_NAME, getName());
         p.put(COL_FROM, last);
         p.put(COL_BACK, back);
         p.put(COL_DURATION, duration);
@@ -172,11 +215,15 @@ public class Page extends BaseData {
     }
 
     public boolean isActivity() {
-        return name.contains(":");
+        return !isFragment;
     }
 
     @Override
     protected String getDetail() {
-        return name + ", " + duration;
+        return getName() + ", " + duration;
+    }
+
+    private String getName() {
+        return Utils.toString(name);
     }
 }

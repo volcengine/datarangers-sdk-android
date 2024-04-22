@@ -5,9 +5,13 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
-import com.bytedance.applog.IAppLogInstance;
+import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.network.INetworkClient;
+import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.NetworkUtils;
-import com.bytedance.applog.util.TLog;
+
+import org.json.JSONObject;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,17 +20,17 @@ import java.util.Map;
 public class UserProfileReporter implements Runnable {
     private final String url;
     private final String apiKey;
-    private final String data;
+    private final JSONObject data;
     private final UserProfileCallback callback;
     private final Context context;
-    private final IAppLogInstance appLogInstance;
+    private final AppLogInstance appLogInstance;
     private static final Handler mHandler = new Handler(Looper.getMainLooper());
 
     public UserProfileReporter(
-            final IAppLogInstance appLogInstance,
+            final AppLogInstance appLogInstance,
             String url,
             String apiKey,
-            String data,
+            JSONObject data,
             UserProfileCallback callback,
             Context context) {
         this.appLogInstance = appLogInstance;
@@ -49,10 +53,21 @@ public class UserProfileReporter implements Runnable {
             m.put("Content-Type", "application/json");
             m.put("X-APIKEY", apiKey);
 
-            appLogInstance.getNetClient().post(url, data.getBytes(), m);
+            appLogInstance
+                    .getNetClient()
+                    .execute(
+                            INetworkClient.METHOD_POST,
+                            url,
+                            data,
+                            m,
+                            INetworkClient.RESPONSE_TYPE_STRING,
+                            false,
+                            Api.HTTP_DEFAULT_TIMEOUT);
             reportSuccess();
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance
+                    .getLogger()
+                    .error(LogInfo.Category.USER_PROFILE, "Report profile failed", e);
             reportFail(UserProfileCallback.NET_ERROR);
         }
     }

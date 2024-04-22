@@ -2,22 +2,24 @@
 package com.bytedance.applog.store;
 
 import android.content.ContentValues;
-import android.content.res.Configuration;
 import android.database.Cursor;
+import android.database.CursorWindow;
+import android.database.sqlite.SQLiteBlobTooBigException;
 import android.database.sqlite.SQLiteDatabase;
 import android.text.TextUtils;
 
 import com.bytedance.applog.engine.Engine;
 import com.bytedance.applog.engine.Session;
-import com.bytedance.applog.monitor.TraceAggregation;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.HardwareUtils;
-import com.bytedance.applog.util.TLog;
 import com.bytedance.applog.util.Utils;
 
-import org.jetbrains.annotations.NotNull;
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,10 +33,10 @@ import java.util.Set;
  * @author luodong.seu
  */
 public class DbStoreV2 {
-    private static final int DB_VERSION = 47;
-    private static final int LIMIT_SELECT_PACK = 8;
+    private static final int DB_VERSION = 51;
+    public static final int LIMIT_SELECT_PACK = 8;
     private static final long LIMIT_INTERVAL_SEND_FAIL =
-            10 * 24 * 60 * 60 * 1000L; // pack保存最长时间：10天，单位：ms
+            30 * 24 * 60 * 60 * 1000L; // pack保存最长时间：30天，单位：ms
 
     private final DbOpenHelper mOpenHelper;
     private final Engine mEngine;
@@ -48,11 +50,32 @@ public class DbStoreV2 {
 
     /** 保存所有的BaseData */
     public void saveAll(List<BaseData> baseDataList) {
-        // 读取屏幕方向
-        for (BaseData data : baseDataList) {
-            loadScreenOrientation(data);
-        }
         this.mStoreHelper.save(baseDataList);
+    }
+
+    /**
+     * 解析 JsonArray
+     * @param array JsonArray
+     * @return 事件时间
+     */
+    private List<Long> parseEventTimeFromJson(JSONArray array) {
+        List<Long> eventTimes = new ArrayList<>();
+        if (null != array && array.length() > 0) {
+            for (int i = 0; i < array.length(); i++) {
+                final JSONObject eventItem = array.optJSONObject(i);
+                if (null == eventItem) {
+                    continue;
+                }
+                if (eventItem.has(BaseData.COL_TS)) {
+                    try {
+                        eventTimes.add(eventItem.getLong(BaseData.COL_TS));
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+        return eventTimes;
     }
 
     /** 清理所有数据 */
@@ -69,8 +92,9 @@ public class DbStoreV2 {
             }
             db.setTransactionSuccessful();
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Clear database failed", e);
         } finally {
             if (null != db) {
                 Utils.endDbTransactionSafely(db);
@@ -86,41 +110,84 @@ public class DbStoreV2 {
      */
     public List<PackV2> queryPacks(String appId) {
         List<PackV2> results = new ArrayList<>();
-        SQLiteDatabase db;
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
-            db = mOpenHelper.getReadableDatabase();
-            cursor =
-                    db.rawQuery(
-                            "SELECT * FROM "
-                                    + PackV2.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ?"
-                                    + " ORDER BY "
-                                    + PackV2.COL_ID
-                                    + " DESC LIMIT "
-                                    + LIMIT_SELECT_PACK,
-                            new String[] {appId});
+            cursor = queryPacks(appId, mOpenHelper.getReadableDatabase());
+            if (cursor == null) return results;
             while (cursor.moveToNext()) {
                 PackV2 pack = new PackV2();
                 pack.readDb(cursor);
                 results.add(pack);
             }
         } catch (Throwable t) {
-            TLog.ysnp(t);
-            mOpenHelper.traceDbError(t);
+            if (t instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Query event packs failed", t);
         } finally {
             Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return results;
     }
 
     /**
+     * 查询 Pack Count
+     *
+     * @param appId 应用ID
+     * @return Int
+     */
+    public int queryPackCount(String appId) {
+        int count = 0;
+        Cursor cursor = null;
+        boolean hasCursorException = false;
+        try {
+            cursor = queryPacks(appId, mOpenHelper.getReadableDatabase());
+            if (cursor == null) return 0;
+            while (cursor.moveToNext()) {
+                count++;
+            }
+        } catch (Throwable t) {
+            if (t instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Query event packs count failed", t);
+        } finally {
+            Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
+        }
+        return count;
+    }
+
+    private Cursor queryPacks(String appId, SQLiteDatabase db) {
+        return db.rawQuery(
+                "SELECT * FROM "
+                        + PackV2.TABLE
+                        + " WHERE "
+                        + BaseData.COL_APP_ID
+                        + "= ?"
+                        + " ORDER BY "
+                        + PackV2.COL_ID
+                        + " DESC LIMIT "
+                        + LIMIT_SELECT_PACK,
+                new String[] {appId});
+    }
+
+
+    /**
      * 打包数据库中的数据
      *
      * <pre>
-     *     1. 联合3个表查询所有uuid
+     * 1. 联合3个表查询所有uuid
      * 2. 遍历uuid打包（事务中处理）
      *   1. 按uuid查询Launch
      *   2. 按uuid查询pages生成Terminate（非当前session_id）
@@ -128,12 +195,18 @@ public class DbStoreV2 {
      *   4. 组装Pack对象（data为JSON原始数据）
      *   5. 存储Pack到数据库，删除上述数据
      * </pre>
+     *
+     * @return boolean 是否还能继续读取数据
      */
-    public synchronized void pack(String appId, JSONObject header) {
+    public synchronized boolean pack(String appId, JSONObject header) {
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.DATABASE, "Pack events for appId:{} start...", appId);
         Set<String> uuidSet = queryAllUnionUuid(appId);
         if (uuidSet.isEmpty()) {
-            return;
+            return false;
         }
+        Set<String> packUUIDSet = new HashSet<>();
         try {
             SQLiteDatabase db = mOpenHelper.getWritableDatabase();
             for (String uuid : uuidSet) {
@@ -159,8 +232,9 @@ public class DbStoreV2 {
                 List<Page> combinedPageList = new ArrayList<>();
 
                 // query terminate
+                boolean isTerminateEnable = mEngine.getConfig().getInitConfig().isLaunchTerminateEnabled();
                 List<Terminate> terminateList =
-                        combinePagesAndCreateTerminate(pageList, combinedPageList);
+                        combinePagesAndCreateTerminate(pageList, combinedPageList, isTerminateEnable);
                 pack.setPageList(combinedPageList);
                 pack.setTerminateList(terminateList);
 
@@ -181,50 +255,33 @@ public class DbStoreV2 {
 
                 // 从event中读取ssid
                 pack.reloadSsidFromEvent();
+                // 从event中读取uuidType
+                pack.reloadUuidTypeFromEvent();
 
                 // 无ssid的pack重新发起一次注册获取ssid
                 if (!mEngine.fetchIfNoSsidInHeader(tempHeader)) {
                     // 注册失败后先放弃本地打包，等待下次打包后重新注册
-                    TLog.w("Register to get ssid by temp header failed.");
+                    mEngine.getAppLog()
+                            .getLogger()
+                            .warn(
+                                    LogInfo.Category.DATABASE,
+                                    "Register to get ssid by temp header failed.");
                     continue;
                 }
 
+                mEngine.getAppLog().getLogger().debug(LogInfo.Category.DATABASE, pack.toString());
+                //  Pack 为空或者 Pack 无效不会存储，存储前说明有数据且有效，记录
+                packUUIDSet.add(uuid);
                 // 保存pack
                 savePackAndDelete(db, pack);
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .warn(LogInfo.Category.DATABASE, "Pack events for appId:{} failed", e, appId);
         }
-    }
-
-    /**
-     * 打包监控数据
-     *
-     * <pre>
-     *     一次性读取所有trace数据
-     *     </>
-     */
-    public synchronized void packTrace(
-            String appId, JSONObject header, TraceAggregation aggregation) {
-        try {
-            SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-            List<Trace> traces = queryAllTrace(db, appId);
-            PackV2 pack = new PackV2();
-            JSONObject tempHeader = new JSONObject();
-            Utils.copy(tempHeader, header);
-            pack.setHeader(tempHeader);
-            pack.setAppId(appId);
-            if (null != aggregation) {
-                pack.setTraceList(aggregation.aggregate(traces));
-            } else {
-                pack.setTraceList(traces);
-            }
-            savePackAndDelete(db, pack);
-        } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
-        }
+        //  如果没有 uuid 有数据，就说明不用再额外读取了
+        return !packUUIDSet.isEmpty();
     }
 
     /** Pack发送后删除记录或更新失败次数 */
@@ -264,8 +321,9 @@ public class DbStoreV2 {
             }
             db.setTransactionSuccessful();
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Do task after pack failed", e);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -279,6 +337,7 @@ public class DbStoreV2 {
     public synchronized Map<String, List<Profile>> queryAllProfiles(final String appId) {
         Map<String, List<Profile>> uuidProfiles = new HashMap<>();
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
             SQLiteDatabase db = mOpenHelper.getWritableDatabase();
             cursor =
@@ -305,10 +364,21 @@ public class DbStoreV2 {
                 profileList.add(profile);
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            if (e instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DATABASE,
+                            "Query profiles for appId:{} failed",
+                            e,
+                            appId);
         } finally {
             Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return uuidProfiles;
     }
@@ -327,8 +397,9 @@ public class DbStoreV2 {
             }
             db.setTransactionSuccessful();
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Delete profiles failed", e);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -346,8 +417,9 @@ public class DbStoreV2 {
             }
             db.setTransactionSuccessful();
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Save profiles failed", e);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -412,22 +484,16 @@ public class DbStoreV2 {
                             + ") = 0",
                     new String[] {ssid, uuid});
 
-            // 更新Trace
-            db.execSQL(
-                    "UPDATE "
-                            + Trace.TABLE
-                            + " SET "
-                            + BaseData.COL_SSID
-                            + " = ? WHERE "
-                            + BaseData.COL_UUID
-                            + " = ? AND LENGTH("
-                            + BaseData.COL_SSID
-                            + ") = 0",
-                    new String[] {ssid, uuid});
             db.setTransactionSuccessful();
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DATABASE,
+                            "Update ssid to:{} for user:{} failed",
+                            e,
+                            ssid,
+                            uuid);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -451,6 +517,8 @@ public class DbStoreV2 {
                             Launch.TABLE,
                             BaseData.COL_ID + " = ?",
                             new String[] {String.valueOf(l.dbId)});
+
+                    LogUtils.sendObject("event_pack", l);
                 }
             }
 
@@ -460,7 +528,9 @@ public class DbStoreV2 {
                     db.delete(
                             Page.TABLE,
                             BaseData.COL_SID + " = ? and " + Page.COL_NAME + " = ?",
-                            new String[] {String.valueOf(p.sid), p.name});
+                            new String[] {String.valueOf(p.sid), Utils.toString(p.name)});
+
+                    LogUtils.sendObject("event_pack", p);
                 }
             }
 
@@ -471,6 +541,8 @@ public class DbStoreV2 {
                             CustomEvent.TABLE,
                             BaseData.COL_ID + " = ?",
                             new String[] {String.valueOf(e.dbId)});
+
+                    LogUtils.sendObject("event_pack", e);
                 }
             }
 
@@ -481,22 +553,16 @@ public class DbStoreV2 {
                             EventV3.TABLE,
                             BaseData.COL_ID + " = ?",
                             new String[] {String.valueOf(e.dbId)});
+
+                    LogUtils.sendObject("event_pack", e);
                 }
             }
 
-            // 删除Trace
-            if (null != pack.getTraceList()) {
-                for (Trace e : pack.getTraceList()) {
-                    db.delete(
-                            Trace.TABLE,
-                            BaseData.COL_ID + " = ?",
-                            new String[] {String.valueOf(e.dbId)});
-                }
-            }
             db.setTransactionSuccessful();
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Save pack and delete data failed", e);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -505,10 +571,11 @@ public class DbStoreV2 {
     /**
      * 通过本地的页面记录来创建所有已结束的Terminate事件
      *
-     * @param combinedPageList 合并pause和resume事件后的page列表，用于eventV3事件上报
+     * @param combinedPageList        合并pause和resume事件后的page列表，用于eventV3事件上报
+     * @param isTerminateEnable
      */
     private List<Terminate> combinePagesAndCreateTerminate(
-            List<Page> pageList, List<Page> combinedPageList) {
+            List<Page> pageList, List<Page> combinedPageList, boolean isTerminateEnable) {
         String curSessionId = mEngine.getSessionId();
 
         List<Terminate> terminateList = new ArrayList<>();
@@ -552,20 +619,31 @@ public class DbStoreV2 {
                     } else {
                         // 有resume事件但没有pause事件，补充一个page:1s
                         page.duration = 1000L;
-                        duration += page.duration;
+                        if (!page.isFragment) {
+                            duration += page.duration;
+                        }
                         combinedPageList.add(page);
                     }
                 } else {
                     // pause事件
                     page.duration = Math.max(1000L, page.duration);
-                    duration += page.duration;
+                    if (!page.isFragment) {
+                        duration += page.duration;
+                    }
                     pauseCount.put(page.name, count != null ? count + 1 : 1);
                     combinedPageList.add(page);
                 }
-                if (page.ts + page.duration > terminateTs) {
-                    terminateTs = Math.max(terminateTs, page.ts + page.duration);
+
+                // pause事件对应的ts是pause时间，resume事件对应的ts是resume时间
+                long pageStopAt = !page.isResumeEvent() ? page.ts : (page.ts + page.duration);
+                if (!page.isFragment && pageStopAt > terminateTs) {
+                    terminateTs = pageStopAt;
                     lastPage = page;
                 }
+            }
+
+            if (!isTerminateEnable) {
+                continue;
             }
 
             Terminate terminate = new Terminate();
@@ -574,6 +652,7 @@ public class DbStoreV2 {
             terminate.ts = terminateTs;
             terminate.uid = lastPage.uid;
             terminate.uuid = lastPage.uuid;
+            terminate.uuidType = lastPage.uuidType;
             terminate.ssid = lastPage.ssid;
             terminate.abSdkVersion = lastPage.abSdkVersion;
             terminate.stopTs = terminateTs;
@@ -582,7 +661,6 @@ public class DbStoreV2 {
             if (!TextUtils.isEmpty(lastPage.lastSession)) {
                 terminate.lastSession = lastPage.lastSession;
             }
-
             // 屏幕方向: 取最后一个页面的方向
             if (null != lastPage.getProperties()
                     && lastPage.getProperties().has(Api.KEY_SCREEN_ORIENTATION)) {
@@ -593,7 +671,9 @@ public class DbStoreV2 {
                             lastPage.getProperties().optString(Api.KEY_SCREEN_ORIENTATION));
                     terminate.setProperties(props);
                 } catch (Throwable e) {
-                    TLog.e(e);
+                    mEngine.getAppLog()
+                            .getLogger()
+                            .warn(LogInfo.Category.DATABASE, "JSON handle failed", e);
                 }
             }
 
@@ -609,33 +689,34 @@ public class DbStoreV2 {
      * @return Set
      */
     private Set<String> queryAllUnionUuid(String appId) {
+        SQLiteDatabase db = null;
+        try {
+            db = mOpenHelper.getReadableDatabase();
+        } catch (Throwable e) {
+            mEngine.getAppLog().getLogger().error(LogInfo.Category.DATABASE, "Open db failed", e);
+        }
         Set<String> result = new HashSet<>();
-        SQLiteDatabase db = mOpenHelper.getReadableDatabase();
+        if (null != db) {
+            result.addAll(loadTableUuidSet(db, Launch.TABLE, appId));
+            result.addAll(loadTableUuidSet(db, Page.TABLE, appId));
+            result.addAll(loadTableUuidSet(db, EventV3.TABLE, appId));
+            result.addAll(loadTableUuidSet(db, CustomEvent.TABLE, appId));
+        }
+        return result;
+    }
+
+    /** 加载指定表格的所有uuid */
+    private Set<String> loadTableUuidSet(SQLiteDatabase db, String tableName, String appId) {
+        Set<String> result = new HashSet<>();
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
             cursor =
                     db.rawQuery(
                             "SELECT `"
                                     + BaseData.COL_UUID
                                     + "` FROM "
-                                    + Launch.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ?",
-                            new String[] {appId});
-            while (cursor.moveToNext()) {
-                result.add(cursor.getString(0));
-            }
-        } finally {
-            Utils.closeSafely(cursor);
-        }
-        try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT `"
-                                    + BaseData.COL_UUID
-                                    + "` FROM "
-                                    + Page.TABLE
+                                    + tableName
                                     + " WHERE "
                                     + BaseData.COL_APP_ID
                                     + "= ?",
@@ -644,30 +725,22 @@ public class DbStoreV2 {
                 result.add(cursor.getString(0));
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            if (e instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DATABASE,
+                            "Query uuid set from table:{} for appId:{} failed",
+                            e,
+                            tableName,
+                            appId);
         } finally {
             Utils.closeSafely(cursor);
         }
-        try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT `"
-                                    + BaseData.COL_UUID
-                                    + "` FROM "
-                                    + EventV3.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ?",
-                            new String[] {appId});
-            while (cursor.moveToNext()) {
-                result.add(cursor.getString(0));
-            }
-        } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
-        } finally {
-            Utils.closeSafely(cursor);
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return result;
     }
@@ -676,17 +749,31 @@ public class DbStoreV2 {
     private List<Launch> queryAllLaunchByUuid(SQLiteDatabase db, String appId, String uuid) {
         List<Launch> launchList = new ArrayList<>();
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT * FROM "
-                                    + Launch.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ? and "
-                                    + BaseData.COL_UUID
-                                    + " = ?",
-                            new String[] {appId, uuid});
+            if (null == uuid) {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + Launch.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " is null",
+                                new String[] {appId});
+            } else {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + Launch.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " = ?",
+                                new String[] {appId, uuid});
+            }
             while (cursor.moveToNext()) {
                 Launch launch = new Launch();
                 launch.readDb(cursor);
@@ -694,20 +781,33 @@ public class DbStoreV2 {
 
                 // 查询是否存在page
                 boolean hasSessionPage =
-                        countByTableWhere(
-                                        db,
-                                        Page.TABLE,
-                                        BaseData.COL_SID + " = ? LIMIT 1",
-                                        new String[] {launch.sid})
-                                > 0;
+                        Utils.isNotEmpty(launch.sid)
+                                && countByTableWhere(
+                                                db,
+                                                Page.TABLE,
+                                                BaseData.COL_SID + " = ? LIMIT 1",
+                                                new String[] {launch.sid})
+                                        > 0;
                 // 是否后台启动
                 launch.mBg = !hasSessionPage;
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            if (e instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DATABASE,
+                            "Query launch by uuid:{} for appId:{} failed",
+                            e,
+                            uuid,
+                            appId);
         } finally {
             Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return launchList;
     }
@@ -726,8 +826,9 @@ public class DbStoreV2 {
                 return cursor.getInt(0);
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Count table:{} failed", e, tableName);
         } finally {
             Utils.closeSafely(cursor);
         }
@@ -738,29 +839,52 @@ public class DbStoreV2 {
     private List<Page> queryAllPageByUuid(SQLiteDatabase db, String appId, String uuid) {
         List<Page> pageList = new ArrayList<>();
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT * FROM "
-                                    + Page.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ? and "
-                                    + BaseData.COL_UUID
-                                    + " = ? order by "
-                                    + Page.COL_DURATION
-                                    + " desc",
-                            new String[] {appId, uuid});
+            if (null == uuid) {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + Page.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " is null order by "
+                                        + Page.COL_DURATION
+                                        + " desc",
+                                new String[] {appId});
+            } else {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + Page.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " = ? order by "
+                                        + Page.COL_DURATION
+                                        + " desc",
+                                new String[] {appId, uuid});
+            }
             while (cursor.moveToNext()) {
                 Page page = new Page();
                 page.readDb(cursor);
                 pageList.add(page);
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            if (e instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Query pages by userId:{} failed", e, uuid);
         } finally {
             Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return pageList;
     }
@@ -773,24 +897,53 @@ public class DbStoreV2 {
         }
         List<CustomEvent> customEvents = new ArrayList<>();
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT * FROM "
-                                    + CustomEvent.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ? and "
-                                    + BaseData.COL_UUID
-                                    + " = ? limit 0, ?",
-                            new String[] {appId, uuid, String.valueOf(maxCount)});
+            if (null == uuid) {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + CustomEvent.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " is null limit 0, ?",
+                                new String[] {appId, String.valueOf(maxCount)});
+            } else {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + CustomEvent.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " = ? limit 0, ?",
+                                new String[] {appId, uuid, String.valueOf(maxCount)});
+            }
             while (cursor.moveToNext()) {
                 CustomEvent customEvent = new CustomEvent();
                 customEvent.readDb(cursor);
                 customEvents.add(customEvent);
             }
+        } catch (Throwable e) {
+            if (e instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DATABASE,
+                            "Query custom event by uuid:{} for " + "appId:{} failed",
+                            e,
+                            uuid,
+                            appId);
         } finally {
             Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return customEvents;
     }
@@ -807,73 +960,91 @@ public class DbStoreV2 {
         }
         List<EventV3> eventV3List = new ArrayList<>();
         Cursor cursor = null;
+        boolean hasCursorException = false;
         try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT * FROM "
-                                    + EventV3.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ? and "
-                                    + BaseData.COL_UUID
-                                    + " = ? limit 0, ?",
-                            new String[] {appId, uuid, String.valueOf(maxCount)});
+            if (null == uuid) {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + EventV3.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " is null limit 0, ?",
+                                new String[] {appId, String.valueOf(maxCount)});
+            } else {
+                cursor =
+                        db.rawQuery(
+                                "SELECT * FROM "
+                                        + EventV3.TABLE
+                                        + " WHERE "
+                                        + BaseData.COL_APP_ID
+                                        + "= ? and "
+                                        + BaseData.COL_UUID
+                                        + " = ? limit 0, ?",
+                                new String[] {appId, uuid, String.valueOf(maxCount)});
+            }
             while (cursor.moveToNext()) {
                 EventV3 eventV3 = new EventV3();
                 eventV3.readDb(cursor);
                 eventV3List.add(eventV3);
             }
         } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
+            if (e instanceof SQLiteBlobTooBigException) {
+                hasCursorException = true;
+            }
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DATABASE,
+                            "Query v3 event by uuid:{} for appId:{} failed",
+                            e,
+                            uuid,
+                            appId);
         } finally {
             Utils.closeSafely(cursor);
+        }
+        if (hasCursorException) {
+            tryIncreaseCursorWindowSize();
         }
         return eventV3List;
     }
 
-    /** 加载屏幕方向 */
-    private void loadScreenOrientation(@NotNull BaseData data) {
-        if (!mEngine.getConfig().isScreenOrientationEnabled()) {
-            return;
-        }
+    /**
+     * 查询 AppId 下用户的所有eventV3事件
+     */
+    public int queryAllEventV3ByUuid(String appId) {
+        return countByTableWhere(
+                mOpenHelper.getWritableDatabase(),
+                EventV3.TABLE,
+                BaseData.COL_APP_ID + "= ? ",
+                new String[] {appId});
+    }
+
+    public void notifyEventV3Observer(List<BaseData> events) {
+        mStoreHelper.notifyEventV3Observer(events);
+    }
+
+    private void tryIncreaseCursorWindowSize() {
         try {
-            JSONObject properties =
-                    null != data.getProperties() ? data.getProperties() : new JSONObject();
-            int ori = HardwareUtils.getScreenOrientation(mEngine.getAppLog().getContext());
-            properties.put(
-                    Api.KEY_SCREEN_ORIENTATION,
-                    ori == Configuration.ORIENTATION_LANDSCAPE ? "landscape" : "portrait");
-            data.setProperties(properties);
+            Field field = CursorWindow.class.getDeclaredField("sCursorWindowSize");
+            field.setAccessible(true);
+            int curCursorWindowSize = field.getInt(null);
+            if (curCursorWindowSize > 0 && curCursorWindowSize <= 8 * 1024 * 1024) {
+                field.setInt(null, curCursorWindowSize * 2);
+                mEngine.getAppLog()
+                        .getLogger()
+                        .debug("tryIncreaseCursorWindowSize set new curCursorWindowSize = " + curCursorWindowSize * 2);
+            } else {
+                mEngine.getAppLog()
+                        .getLogger()
+                        .debug("tryIncreaseCursorWindowSize curCursorWindowSize invalid = " + curCursorWindowSize);
+            }
         } catch (Throwable e) {
-            TLog.e(e);
+            mEngine.getAppLog().getLogger()
+                    .error(LogInfo.Category.DATABASE, "tryIncreaseCursorWindowSize", e);
         }
     }
 
-    /** 查询所有的监控记录 */
-    private List<Trace> queryAllTrace(SQLiteDatabase db, String appId) {
-        List<Trace> traces = new ArrayList<>();
-        Cursor cursor = null;
-        try {
-            cursor =
-                    db.rawQuery(
-                            "SELECT * FROM "
-                                    + Trace.TABLE
-                                    + " WHERE "
-                                    + BaseData.COL_APP_ID
-                                    + "= ? ",
-                            new String[] {appId});
-            while (cursor.moveToNext()) {
-                Trace trace = new Trace();
-                trace.readDb(cursor);
-                traces.add(trace);
-            }
-        } catch (Throwable e) {
-            TLog.ysnp(e);
-            mOpenHelper.traceDbError(e);
-        } finally {
-            Utils.closeSafely(cursor);
-        }
-        return traces;
-    }
 }

@@ -4,19 +4,22 @@ package com.bytedance.applog.engine;
 import android.os.Bundle;
 
 import com.bytedance.applog.AppLogInstance;
-import com.bytedance.applog.IHeaderCustomTimelyCallback;
-import com.bytedance.applog.manager.ConfigManager;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.DeviceManager;
 import com.bytedance.applog.network.CongestionController;
+import com.bytedance.applog.server.Api;
 import com.bytedance.applog.store.DbStoreV2;
 import com.bytedance.applog.store.PackV2;
-import com.bytedance.applog.util.TLog;
-import com.bytedance.applog.util.Utils;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.HttpURLConnection;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author shiyanlong
@@ -59,6 +62,10 @@ class Sender extends BaseWorker {
         if (session != null) {
             final Bundle playBundle = session.getPlayBundle(currentTs, INTERVAL_PLAY);
             if (playBundle != null) {
+                mEngine.getAppLog()
+                        .getLogger()
+                        .debug(LogInfo.Category.EVENT, "New play session event");
+
                 appLogInstance.onEventV3("play_session", playBundle, AppLogInstance.BUSINESS_EVENT);
                 appLogInstance.flush();
             }
@@ -67,35 +74,45 @@ class Sender extends BaseWorker {
         final DeviceManager device = mEngine.getDm();
         boolean done = false;
         if (device.getRegisterState() != DeviceManager.STATE_EMPTY) {
-            device.updateNetworkAccessType();
-            JSONObject newHeader = Utils.transferHeaderOaid(device.getHeader());
+            device.updateNetworkAccessType(mEngine.isResume());
+            JSONObject newHeader = device.getHeader();
             if (newHeader != null) {
-                IHeaderCustomTimelyCallback callback = appLogInstance.getHeaderCustomCallback();
-                if (callback != null) {
-                    callback.updateHeader(newHeader);
-                }
                 send(newHeader);
                 done = true;
             } else {
-                TLog.ysnp(null);
+                mEngine.getAppLog().getLogger().error(LogInfo.Category.EVENT, "Header is empty");
             }
         }
         return done;
     }
 
     private void send(JSONObject newHeader) {
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.EVENT, "Send events with header:{}", newHeader);
+
         final DbStoreV2 dbStore = mEngine.getDbStoreV2();
         final String appId = appLogInstance.getAppId();
-        dbStore.pack(appId, newHeader);
 
         if (!mCongestionController.isCanSend()) {
             return;
         }
 
-        final ConfigManager mConfig = mEngine.getConfig();
-        final DeviceManager device = mEngine.getDm();
+        //  之前打包先查询一次有多少遗留 Pack 数据
+        int packCount = dbStore.queryPackCount(appId);
 
+        if (packCount < DbStoreV2.LIMIT_SELECT_PACK) {
+            int canPackCount = DbStoreV2.LIMIT_SELECT_PACK - packCount;
+            for (int i = 0; i < canPackCount; i++) {
+                //  如果发现没数据了 就不再继续读取
+                if (!dbStore.pack(appId, newHeader)) break;
+            }
+        }
         List<PackV2> packs = dbStore.queryPacks(appId);
+
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.EVENT, "{} packs to be sent", packs.size());
 
         int successCount = 0;
         if (packs.size() > 0) {
@@ -105,37 +122,98 @@ class Sender extends BaseWorker {
                     successCount++;
                     continue;
                 }
-                String[] uris =
-                        appLogInstance
-                                .getApiParamsUtil()
-                                .getSendLogUris(mEngine, device.getHeader(), pack.eventType);
-                byte[] data = appLogInstance.getApi().getEncryptUtils().encrypt(pack.data);
-                int responseCode = appLogInstance.getApi().send(uris, data, mConfig);
-                if (responseCode == HttpURLConnection.HTTP_OK) {
-                    mCongestionController.handleSuccess();
-                    pack.fail = 0;
+                if (singlePackSend(pack)) {
                     successCount++;
-                } else {
-                    mCongestionController.handleException();
-                    pack.fail += 1;
                 }
             }
 
             // 发送后的处理
             dbStore.doAfterPackSend(packs);
 
-            TLog.d(
-                    getName()
-                            + " successfully send "
-                            + successCount
-                            + " packs (total: "
-                            + packs.size()
-                            + ")");
+            mEngine.getAppLog()
+                    .getLogger()
+                    .debug(
+                            LogInfo.Category.EVENT,
+                            getName()
+                                    + " successfully send "
+                                    + successCount
+                                    + " packs (total: "
+                                    + packs.size()
+                                    + ")");
         }
+    }
+
+    public boolean singlePackSend(PackV2 pack) {
+        JSONObject packJson;
+        String[] uris =
+                appLogInstance
+                        .getApiParamsUtil()
+                        .getSendLogUris(mEngine, mEngine.getDm().getHeader(), pack.eventType);
+        boolean isSuccess = false;
+        try {
+            packJson = new JSONObject(new String(pack.data));
+            packJson.put(Api.KEY_LOCAL_TIME, System.currentTimeMillis() / 1000);
+            int responseCode = appLogInstance.getApi().sendLog(uris, packJson, mEngine.getConfig());
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                mCongestionController.handleSuccess();
+                pack.fail = 0;
+                isSuccess = true;
+                sendPackUpload2Devtools(pack.getEventLocalIds(), true);
+            } else {
+                // 对齐内部 / iOS 只有 5xx 的服务端错误才开启拥塞控制
+                int errorType;
+                if (Api.checkIfJamMsg(responseCode)) {
+                    mCongestionController.handleException();
+                }
+                errorType = responseCode;
+                mEngine.getAppLog()
+                        .getLogger()
+                        .error(LogInfo.Category.EVENT, "Send pack failed:{}", responseCode);
+                pack.fail += 1;
+                sendPackUpload2Devtools(pack.getEventLocalIds(), false);
+            }
+        } catch (Throwable e) {
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.EVENT, "Send pack failed", e);
+            sendPackUpload2Devtools(pack.getEventLocalIds(), false);
+        }
+        return isSuccess;
     }
 
     @Override
     protected String getName() {
         return "sender";
+    }
+
+    /**
+     * 发送上报状态到devtools
+     *
+     * @param success 是否上报成功
+     */
+    private void sendPackUpload2Devtools(final Set<String> eventIds, final boolean success) {
+        if (null == eventIds || eventIds.isEmpty()) {
+            return;
+        }
+        LogUtils.sendJsonFetcher(
+                "event_upload_eid",
+                new EventBus.DataFetcher() {
+                    @Override
+                    public Object fetch() {
+                        JSONObject data = new JSONObject();
+                        try {
+                            data.put("$$APP_ID", appLogInstance.getAppId());
+                            JSONArray idArray = new JSONArray();
+                            for (String id : eventIds) {
+                                idArray.put(id);
+                            }
+                            data.put("$$EVENT_LOCAL_ID_ARRAY", idArray);
+                            data.put("$$UPLOAD_STATUS", success ? "success" : "failed");
+                        } catch (JSONException ignored) {
+
+                        }
+                        return data;
+                    }
+                });
     }
 }

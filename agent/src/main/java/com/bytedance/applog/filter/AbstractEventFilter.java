@@ -91,7 +91,7 @@ public abstract class AbstractEventFilter {
         return true;
     }
 
-    public static final AbstractEventFilter parseFilterFromServer(
+    public static AbstractEventFilter parseFilterFromServer(
             Context context, String spName, JSONObject logSettingJson) {
         AbstractEventFilter eventFilter = null;
         try {
@@ -99,7 +99,7 @@ public abstract class AbstractEventFilter {
                     SharedPreferenceCacheHelper.getSafeSharedPreferences(
                                     context, spName, Context.MODE_PRIVATE)
                             .edit();
-            editor.clear().commit();
+            editor.clear().apply();
             if (logSettingJson == null || !logSettingJson.has(KEY_EVENT_LIST)) {
                 return null;
             }
@@ -154,7 +154,7 @@ public abstract class AbstractEventFilter {
                 }
             }
 
-            editor.commit();
+            editor.apply();
 
             if (isBlock > 0) {
                 eventFilter = new BlockEventFilter(eventSet, paramMap);

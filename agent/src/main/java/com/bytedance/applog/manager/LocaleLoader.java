@@ -2,17 +2,20 @@
 package com.bytedance.applog.manager;
 
 import android.content.Context;
+
 import com.bytedance.applog.server.Api;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.Calendar;
 import java.util.Locale;
 import java.util.TimeZone;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 /**
  * @author shiyanlong
  * @date 2019/2/2
- **/
+ */
 class LocaleLoader extends BaseLoader {
 
     private final Context mApp;
@@ -45,5 +48,10 @@ class LocaleLoader extends BaseLoader {
         int tzOffset = zone.getOffset(System.currentTimeMillis()) / 1000;
         info.put(Api.KEY_TZ_OFFSET, tzOffset);
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "Locale";
     }
 }

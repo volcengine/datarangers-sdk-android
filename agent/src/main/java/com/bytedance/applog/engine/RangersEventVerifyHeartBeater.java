@@ -4,6 +4,7 @@ package com.bytedance.applog.engine;
 public class RangersEventVerifyHeartBeater extends BaseWorker {
 
     private static final long INTERVAL_EVENT_HEART_BEAT = 1000L;
+    private static final long[] DEFAULT_RETRY_INTERVALS = new long[] {INTERVAL_EVENT_HEART_BEAT};
 
     private final String mCookie;
 
@@ -30,7 +31,7 @@ public class RangersEventVerifyHeartBeater extends BaseWorker {
 
     @Override
     protected long[] getRetryIntervals() {
-        return new long[] {INTERVAL_EVENT_HEART_BEAT};
+        return DEFAULT_RETRY_INTERVALS;
     }
 
     @Override

@@ -13,14 +13,17 @@ import androidx.annotation.Nullable;
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.AppLogHelper;
 import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.log.AbstractAppLogLogger;
+import com.bytedance.applog.log.IAppLogLogger;
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.util.JavaScriptUtils;
-import com.bytedance.applog.util.TLog;
 import com.bytedance.applog.util.WebViewJsUtil;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -33,6 +36,7 @@ import java.util.regex.Pattern;
  * @date 2021/1/20
  */
 public class AppLogBridge {
+    private static final List<String> loggerTags = Collections.singletonList("AppLogBridge");
 
     /**
      * 初始化AppLogBridge代码，主要为了兼容js sdk 5.0以下版本调用AppLogBridge.hasStarted
@@ -40,19 +44,19 @@ public class AppLogBridge {
      * <p>annotation: 在js sdk v5.0+ 已经不需要AppLogBridge.hasStarted函数 TODO: 未来可以考虑去掉该兼容代码
      */
     public static final String compatAppLogBridgeCode =
-            "if(typeof AppLogBridge !== 'undefined' && !AppLogBridge.hasStarted) { "
-                    + "AppLogBridge.hasStarted = function(callback = undefined) {"
-                    + "    if(callback) callback(AppLogBridge"
-                    + ".hasStartedForJsSdkUnderV5_deprecated());\n"
-                    + "    return AppLogBridge.hasStartedForJsSdkUnderV5_deprecated();"
-                    + "};\n"
-                    + "}";
+            "if(typeof AppLogBridge !== 'undefined' && !AppLogBridge.hasOwnProperty('hasStarted')"
+                    + ") { AppLogBridge.hasStarted = function(callback) {if(callback) "
+                    + "callback(AppLogBridge.hasStartedForJsSdkUnderV5_deprecated());  return AppLogBridge.hasStartedForJsSdkUnderV5_deprecated();};}";
 
     public static final class _AppLogBridge {
-        /** appId为空则转发信息给所有实例 */
+
+        /**
+         * appId为空则转发信息给所有实例
+         */
         private String appId;
 
-        public _AppLogBridge() {}
+        public _AppLogBridge() {
+        }
 
         @JavascriptInterface
         public String getAppId() {
@@ -62,102 +66,116 @@ public class AppLogBridge {
         @Deprecated
         @JavascriptInterface
         public int hasStartedForJsSdkUnderV5_deprecated() {
-            TLog.d("_AppLogBridge:hasStarted");
+            log("_AppLogBridge:hasStarted");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).hasStarted() ? 1 : 0;
         }
 
         @JavascriptInterface
         public String getSsid() {
-            TLog.d("_AppLogBridge:getSsid");
+            log("_AppLogBridge:getSsid");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getSsid();
         }
 
         @JavascriptInterface
         public String getIid() {
-            TLog.d("_AppLogBridge:getIid");
+            log("_AppLogBridge:getIid");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getIid();
         }
 
         @JavascriptInterface
         public String getUuid() {
-            TLog.d("_AppLogBridge:getUuid");
+            log("_AppLogBridge:getUuid");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getUserUniqueID();
         }
 
         @JavascriptInterface
         public String getUdid() {
-            TLog.d("_AppLogBridge:getUdid");
+            log("_AppLogBridge:getUdid");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getUdid();
         }
 
         @JavascriptInterface
         public String getClientUdid() {
-            TLog.d("_AppLogBridge:getClientUdid");
+            log("_AppLogBridge:getClientUdid");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getClientUdid();
         }
 
         @JavascriptInterface
         public String getOpenUdid() {
-            TLog.d("_AppLogBridge:getOpenUdid");
+            log("_AppLogBridge:getOpenUdid");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getOpenUdid();
         }
 
         @JavascriptInterface
         public String getAbSdkVersion() {
-            TLog.d("_AppLogBridge:getAbSdkVersion");
+            log("_AppLogBridge:getAbSdkVersion");
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).getAbSdkVersion();
         }
 
         @JavascriptInterface
         public String getABTestConfigValueForKey(String key, String defaultValue) {
-            TLog.d("_AppLogBridge:getABTestConfigValueForKey: {}, {}", key, defaultValue);
+            log("_AppLogBridge:getABTestConfigValueForKey: {}, {}", key, defaultValue);
             return AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
                     .getAbConfig(key, defaultValue);
         }
 
         @JavascriptInterface
+        public String getAllAbTestConfigs() {
+            log("_AppLogBridge:getAllAbTestConfigs");
+            JSONObject allAbTestConfigs = AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
+                    .getAllAbTestConfigs();
+            return allAbTestConfigs != null ? allAbTestConfigs.toString() : null;
+        }
+
+        @JavascriptInterface
+        public void setExternalAbVersion(String version) {
+            log("_AppLogBridge:setExternalAbVersion: {}", version);
+            AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).setExternalAbVersion(version);
+        }
+
+        @JavascriptInterface
         public void setUserUniqueId(@NonNull final String userUniqueId) {
-            TLog.d("_AppLogBridge:setUuid: {}", userUniqueId);
+            log("_AppLogBridge:setUuid: {}", userUniqueId);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).setUserUniqueID(userUniqueId);
         }
 
         @JavascriptInterface
         public void profileSet(String jsonString) {
-            TLog.d("_AppLogBridge:profileSet: {}", jsonString);
+            log("_AppLogBridge:profileSet: {}", jsonString);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
                     .profileSet(JavaScriptUtils.jsObjectStrToJson(jsonString));
         }
 
         @JavascriptInterface
         public void profileAppend(String jsonString) {
-            TLog.d("_AppLogBridge:profileAppend: " + jsonString);
+            log("_AppLogBridge:profileAppend: " + jsonString);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
                     .profileAppend(JavaScriptUtils.jsObjectStrToJson(jsonString));
         }
 
         @JavascriptInterface
         public void profileIncrement(String jsonString) {
-            TLog.d("_AppLogBridge:profileIncrement: " + jsonString);
+            log("_AppLogBridge:profileIncrement: " + jsonString);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
                     .profileIncrement(JavaScriptUtils.jsObjectStrToJson(jsonString));
         }
 
         @JavascriptInterface
         public void profileSetOnce(String jsonString) {
-            TLog.d("_AppLogBridge:profileSetOnce: {}", jsonString);
+            log("_AppLogBridge:profileSetOnce: {}", jsonString);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
                     .profileSetOnce(JavaScriptUtils.jsObjectStrToJson(jsonString));
         }
 
         @JavascriptInterface
         public void profileUnset(String key) {
-            TLog.d("_AppLogBridge:profileUnset: {}", key);
+            log("_AppLogBridge:profileUnset: {}", key);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).profileUnset(key);
         }
 
         @JavascriptInterface
         public void setHeaderInfo(String jsonString) {
-            TLog.d("_AppLogBridge:setHeaderInfo: {}", jsonString);
+            log("_AppLogBridge:setHeaderInfo: {}", jsonString);
             // 空参数，则原生调用传入null
             if (TextUtils.isEmpty(jsonString) || jsonString.equals("undefined")) {
                 AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).setHeaderInfo(null);
@@ -175,7 +193,7 @@ public class AppLogBridge {
                     map.put(key, jsonObject.get(key));
                 }
             } catch (JSONException e) {
-                TLog.e("_AppLogBridge: wrong Json format", e);
+                log("_AppLogBridge: wrong Json format", e);
                 return;
             }
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).setHeaderInfo(map);
@@ -183,39 +201,52 @@ public class AppLogBridge {
 
         @JavascriptInterface
         public void addHeaderInfo(String key, String value) {
-            TLog.d("_AppLogBridge:addHeaderInfo: {}, {}", key, value);
+            log("_AppLogBridge:addHeaderInfo: {}, {}", key, value);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).setHeaderInfo(key, value);
         }
 
         @JavascriptInterface
         public void removeHeaderInfo(String key) {
-            TLog.d("_AppLogBridge:removeHeaderInfo: {}", key);
+            log("_AppLogBridge:removeHeaderInfo: {}", key);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId).removeHeaderInfo(key);
         }
 
         @JavascriptInterface
         public void onEventV3(@NonNull final String event, @Nullable final String params) {
-            TLog.d("_AppLogBridge:onEventV3: {}, {}", event, params);
+            log("_AppLogBridge:onEventV3: {}, {}", event, params);
             AppLogHelper.getInstanceByAppIdOrGlobalDefault(appId)
                     .onEventV3(event, JavaScriptUtils.jsObjectStrToJson(params));
         }
 
-        /** 多实例下设置主实例AppId */
+        /**
+         * 多实例下设置主实例AppId
+         */
         @JavascriptInterface
         public void setNativeAppId(String appId) {
-            TLog.d("_AppLogBridge:setNativeAppId: {}", appId);
+            log("_AppLogBridge:setNativeAppId: {}", appId);
             this.appId = (TextUtils.isEmpty(appId) || appId.equals("undefined")) ? null : appId;
+        }
+
+        private void log(String message, Object... args) {
+            IAppLogLogger logger = AbstractAppLogLogger.getLogger(getAppId());
+            if (null == logger) {
+                logger = LoggerImpl.global();
+            }
+            logger.debug(loggerTags, message, args);
         }
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
-    public static void injectH5Bridge(View webView, String url) {
+    public static boolean injectH5Bridge(View webView, String url) {
         if (checkAllowList(url)) {
-            TLog.d("_AppLogBridge:injectH5Bridge to url:{}", url);
+            LoggerImpl.global().debug(loggerTags, "injectH5Bridge to url:{}", url);
             JavaScriptUtils.addJavascriptInterface(webView, new _AppLogBridge(), "AppLogBridge");
+            return true;
         } else {
-            TLog.d("_AppLogBridge:url:{} not pass allowlist", url);
+            LoggerImpl.global()
+                    .debug(loggerTags, "injectH5Bridge to url:{} not pass allowlist", url);
         }
+        return false;
     }
 
     /**
@@ -224,6 +255,7 @@ public class AppLogBridge {
      * <p>适配 js sdk < 5.0 场景，5.0以后不需要执行该函数 TODO: 未来可以考虑去掉该兼容函数
      */
     public static void compatAppLogBridge(View view, String url) {
+        LoggerImpl.global().debug(loggerTags, "Inject applog bridge compat js to: {}", view);
         WebViewJsUtil.evaluateJavascript(view, compatAppLogBridgeCode);
     }
 
@@ -235,7 +267,7 @@ public class AppLogBridge {
      */
     private static boolean checkAllowList(String url) {
         if (TextUtils.isEmpty(url)) {
-            TLog.d("Url is empty.");
+            LoggerImpl.global().debug(loggerTags, "checkAllowList url is empty");
             return false;
         }
 
@@ -243,7 +275,7 @@ public class AppLogBridge {
         List<AppLogInstance> enabledInstances =
                 AppLogHelper.filterInstances(AppLogHelper.isH5BridgeEnabledMatcher);
         if (enabledInstances.isEmpty()) {
-            TLog.d("No AppLog instance enabled h5 bridge.");
+            LoggerImpl.global().debug(loggerTags, "No AppLog instance enabled h5 bridge");
             return false;
         }
 
@@ -275,13 +307,13 @@ public class AppLogBridge {
         try {
             host = Uri.parse(url).getHost();
         } catch (Throwable e) {
-            TLog.e("Parse host failed. url:" + url, e);
+            LoggerImpl.global().debug(loggerTags, "Parse host failed. url:" + url, e);
             return false;
         }
 
         if (TextUtils.isEmpty(host)) {
             // 无host的代码检查直接
-            TLog.d("Host in url:{} is empty.", host, url);
+            LoggerImpl.global().debug(loggerTags, "Host in url:{} is empty", url);
             return false;
         }
 
@@ -294,7 +326,8 @@ public class AppLogBridge {
                     return true;
                 }
             } catch (Throwable e) {
-                TLog.e(e);
+                LoggerImpl.global()
+                        .error(loggerTags, "Check allow list by pattern:{} failed", e, w);
             }
         }
         return false;

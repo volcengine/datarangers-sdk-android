@@ -2,8 +2,9 @@
 package com.bytedance.applog.util;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.AppLogInstance;
@@ -20,7 +21,7 @@ public class AntiCheatingUtilsTest {
 
     @Test
     public void testAddAnticheatingHeader() {
-        Context appContext = InstrumentationRegistry.getContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         final InitConfig config = new InitConfig("1234", "channel");
         final ConfigManager cfgManger = new ConfigManager(appContext, config);
         cfgManger.getStatSp().edit().clear().apply();

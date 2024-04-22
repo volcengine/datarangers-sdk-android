@@ -6,17 +6,17 @@ import android.graphics.Canvas;
 import android.util.Base64;
 import android.view.View;
 
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.util.ViewUtils;
-import com.bytedance.applog.util.WindowUtils;
+import com.bytedance.applog.util.WindowHelper;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -25,10 +25,15 @@ import java.util.List;
  * @author wzj
  */
 public class DomPagerHelper {
+    private static final List<String> loggerTags = Collections.singletonList("DomPagerHelper");
 
     public static String getShotBase64(int displayId) {
         Bitmap bitmap = captureScreen(displayId);
-        return bitmapToBase64(bitmap);
+        String bitmapBase64Str = bitmapToBase64(bitmap);
+        if (bitmap != null) {
+            bitmap.recycle();
+        }
+        return bitmapBase64Str;
     }
 
     public static JSONArray getDomPagerArray(
@@ -60,20 +65,20 @@ public class DomPagerHelper {
                 pageArray.put(webViewPage);
             }
             return pageArray;
-        } catch (JSONException e) {
-            TLog.e(e);
+        } catch (Throwable e) {
+            LoggerImpl.global().error(loggerTags, "getDomPagerArray failed", e);
         }
         return null;
     }
 
     private static Bitmap captureScreen(int displayId) {
         Bitmap screenShot = null;
-        WindowUtils.initialize();
-        View[] views = WindowUtils.getWindowViews();
+        WindowHelper.init();
+        View[] views = WindowHelper.getWindowViews();
         View decorView = null;
 
         for (View view : views) {
-            if (WindowUtils.isDecorView(view) && ViewUtils.getDisplayId(view) == displayId) {
+            if (WindowHelper.isDecorView(view) && ViewUtils.getDisplayId(view) == displayId) {
                 decorView = view;
                 break;
             }
@@ -85,35 +90,46 @@ public class DomPagerHelper {
                 Bitmap cacheBitmap = decorView.getDrawingCache();
                 screenShot = cacheBitmap.copy(Bitmap.Config.RGB_565, true);
                 decorView.setDrawingCacheEnabled(false);
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                LoggerImpl.global().error("Cannot get decor view screen shot", e);
                 decorView.setDrawingCacheEnabled(false);
+            } finally {
+                decorView.destroyDrawingCache();
             }
+        } else {
+            LoggerImpl.global()
+                    .warn(
+                            "Cannot find decor view when captureScreen:{} in {} views",
+                            displayId,
+                            views.length);
         }
         if (screenShot == null) {
+            LoggerImpl.global().warn("Cannot build decor view screenShot:{}", displayId);
             return null;
         }
         int[] decorViewLoc = new int[2];
         decorView.getLocationOnScreen(decorViewLoc);
         Canvas canvas = new Canvas(screenShot);
 
-        if (views != null && views.length > 0) {
-            for (View view : views) {
-                if (view != null && ViewUtils.getDisplayId(view) == displayId) {
-                    int[] viewLoc = new int[2];
-                    view.getLocationOnScreen(viewLoc);
-                    view.setDrawingCacheEnabled(true);
-                    try {
-                        Bitmap cacheBitmap = view.getDrawingCache();
-                        Bitmap bitmap = cacheBitmap.copy(Bitmap.Config.RGB_565, true);
-                        canvas.drawBitmap(
-                                bitmap,
-                                viewLoc[0] - decorViewLoc[0],
-                                viewLoc[1] - decorViewLoc[1],
-                                null);
-                        view.setDrawingCacheEnabled(false);
-                    } catch (Exception e) {
-                        view.setDrawingCacheEnabled(false);
-                    }
+        for (View view : views) {
+            if (view != null && ViewUtils.getDisplayId(view) == displayId) {
+                int[] viewLoc = new int[2];
+                view.getLocationOnScreen(viewLoc);
+                view.setDrawingCacheEnabled(true);
+                try {
+                    Bitmap cacheBitmap = view.getDrawingCache();
+                    Bitmap bitmap = cacheBitmap.copy(Bitmap.Config.RGB_565, true);
+                    canvas.drawBitmap(
+                            bitmap,
+                            viewLoc[0] - decorViewLoc[0],
+                            viewLoc[1] - decorViewLoc[1],
+                            null);
+                    view.setDrawingCacheEnabled(false);
+                } catch (Throwable e) {
+                    LoggerImpl.global().error("Cannot get view:{} screen shot", e, view.getId());
+                    view.setDrawingCacheEnabled(false);
+                } finally {
+                    view.destroyDrawingCache();
                 }
             }
         }
@@ -132,7 +148,9 @@ public class DomPagerHelper {
         try {
             if (bitmap != null) {
                 baos = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 15, baos);
+                // 新版本调整到 Webp 格式 并且压缩比调整 0%，数据比例能减少 50% 以上
+                // 已验证过 chrome / safari
+                bitmap.compress(Bitmap.CompressFormat.WEBP, 0, baos);
 
                 baos.flush();
                 baos.close();
@@ -140,18 +158,17 @@ public class DomPagerHelper {
                 byte[] bitmapBytes = baos.toByteArray();
                 result = Base64.encodeToString(bitmapBytes, Base64.NO_WRAP);
             } else {
-                TLog.i("shot is null!");
+                LoggerImpl.global().debug(loggerTags, "shot is null!");
             }
         } catch (IOException e) {
-            TLog.e(e);
+            LoggerImpl.global().error(loggerTags, "bitmapToBase64 failed", e);
         } finally {
             try {
                 if (baos != null) {
                     baos.flush();
                     baos.close();
                 }
-            } catch (IOException e) {
-                TLog.e(e);
+            } catch (IOException ignored) {
             }
         }
         return result;
@@ -182,8 +199,8 @@ public class DomPagerHelper {
                 dom.put("children", childrenArray);
             }
             return dom;
-        } catch (JSONException e) {
-            TLog.e(e);
+        } catch (Throwable e) {
+            LoggerImpl.global().error(loggerTags, "getWebViewDom failed", e);
         }
         return null;
     }
@@ -216,8 +233,8 @@ public class DomPagerHelper {
             }
             dom.put("children", children);
             return dom;
-        } catch (JSONException e) {
-            TLog.e(e);
+        } catch (Throwable e) {
+            LoggerImpl.global().error(loggerTags, "getNativeDom failed", e);
         }
         return null;
     }

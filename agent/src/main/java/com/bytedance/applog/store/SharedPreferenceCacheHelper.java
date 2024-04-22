@@ -6,10 +6,10 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.text.TextUtils;
 
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
 
-import java.util.Objects;
+import java.util.Collections;
 
 /**
  * 保存到sp里面
@@ -39,7 +39,7 @@ public class SharedPreferenceCacheHelper extends CacheHelper {
             Context context, String cacheFileName, boolean saveNullAsEmpty) {
         mSp =
                 SharedPreferenceCacheHelper.getSafeSharedPreferences(
-                        Objects.requireNonNull(context), cacheFileName, Context.MODE_PRIVATE);
+                        context, cacheFileName, Context.MODE_PRIVATE);
         this.saveNullAsEmpty = saveNullAsEmpty;
     }
 
@@ -149,10 +149,17 @@ public class SharedPreferenceCacheHelper extends CacheHelper {
             try {
                 spContext = app.createDeviceProtectedStorageContext();
                 if (!spContext.moveSharedPreferencesFrom(app, name)) {
-                    TLog.w("Failed to migrate shared preferences.");
+                    LoggerImpl.global()
+                            .warn(
+                                    Collections.singletonList("SharedPreferenceCacheHelper"),
+                                    "Failed to migrate " + "shared preferences.");
                 }
             } catch (Throwable e) {
-                TLog.e(e);
+                LoggerImpl.global()
+                        .error(
+                                Collections.singletonList("SharedPreferenceCacheHelper"),
+                                "Create protected storage context failed",
+                                e);
             }
         }
         return spContext.getSharedPreferences(name, mode);

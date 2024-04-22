@@ -3,6 +3,7 @@ package com.bytedance.applog.util;
 
 import android.text.TextUtils;
 
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.server.Api;
 
 import java.io.File;
@@ -39,7 +40,8 @@ public class DeprecatedFileCleaner {
                                     try {
                                         clearDeprecatedFile(mDeprecatedFileDir.get(i), file);
                                     } catch (Exception e) {
-                                        TLog.e(e);
+                                        LoggerImpl.global()
+                                                .error("DeprecatedFileCleaner execute failed", e);
                                     }
                                 }
                             }

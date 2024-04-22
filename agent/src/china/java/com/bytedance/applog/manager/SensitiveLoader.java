@@ -20,20 +20,10 @@ import org.json.JSONObject;
  */
 class SensitiveLoader extends BaseLoader {
 
-    private final ISensitiveInfoProvider sensitiveInfoProvider;
-    private final Context mApp;
-    private final ConfigManager mConfig;
     private final DeviceManager mManager;
 
-    SensitiveLoader(
-            Context ctx,
-            ConfigManager cfg,
-            DeviceManager deviceManager,
-            ISensitiveInfoProvider sensitiveInfoProvider) {
+    SensitiveLoader(DeviceManager deviceManager) {
         super(true, false);
-        this.sensitiveInfoProvider = sensitiveInfoProvider;
-        mApp = ctx;
-        mConfig = cfg;
         mManager = deviceManager;
     }
 
@@ -53,5 +43,10 @@ class SensitiveLoader extends BaseLoader {
         DeviceManager.putString(info, Api.KEY_SERIAL_NUMBER, serialNumber);
 
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "SensitiveLoader";
     }
 }

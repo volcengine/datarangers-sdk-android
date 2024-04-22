@@ -7,14 +7,16 @@ import android.content.Intent;
 
 import com.bytedance.applog.AppLogHelper;
 import com.bytedance.applog.engine.Engine;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
+
+import java.util.Collections;
 
 /**
  * 跨进程上报的入口类，负责收集子进程的上报事件，交给{@link Engine}处理。
  *
  * @author shiyanlong
  * @date 2019/1/16
- **/
+ */
 public class Collector extends BroadcastReceiver {
 
     public static final String KEY_DATA = "K_DATA";
@@ -25,7 +27,7 @@ public class Collector extends BroadcastReceiver {
         if (strings != null && strings.length > 0) {
             AppLogHelper.receive(strings);
         } else {
-            TLog.ysnp(null);
+            LoggerImpl.global().error(Collections.singletonList("Collector"), "Event is null");
         }
     }
 }

@@ -22,7 +22,6 @@ class AttributionRequest : BaseData() {
     var channel: String? = null
     var androidId: String? = null
     var imei: String? = null
-    var oaid: String? = null
     var googleAid: String? = null
     var ip: String? = null
     var ua: String? = null
@@ -41,7 +40,6 @@ class AttributionRequest : BaseData() {
             put("caid", caid)
             put("androidid", androidId)
             put("imei", imei)
-            put("oaid", oaid)
             put("google_aid", googleAid)
             put("ip", ip)
             put("ua", ua)

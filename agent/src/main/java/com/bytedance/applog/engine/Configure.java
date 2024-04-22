@@ -4,10 +4,13 @@ package com.bytedance.applog.engine;
 import com.bytedance.applog.AppLogHelper;
 import com.bytedance.applog.Level;
 import com.bytedance.applog.filter.AbstractEventFilter;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.manager.DeviceManager;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.EncryptUtils;
+import com.bytedance.applog.util.JsonUtils;
 import com.bytedance.applog.util.Utils;
 
 import org.json.JSONException;
@@ -41,23 +44,13 @@ class Configure extends BaseWorker {
     @Override
     public boolean doWork() throws JSONException {
         final DeviceManager device = mEngine.getDm();
-
         JSONObject header = device.getHeader();
         if (device.getRegisterState() != DeviceManager.STATE_EMPTY && header != null) {
-            JSONObject request = new JSONObject();
-            request.put(Api.KEY_MAGIC, Api.MSG_MAGIC);
-            request.put(Api.KEY_HEADER, header);
-            request.put("_gen_time", System.currentTimeMillis());
+            JSONObject request = Api.buildRequestBody(header);
             if (mEngine.getConfig().getInitConfig().isEventFilterEnable()) {
                 request.put(EncryptUtils.KEY_EVENT_FILTER, 1);
             }
-            if (appLogInstance.getEncryptAndCompress()) {
-                String[] keyAndIv = EncryptUtils.genRandomKeyAndIv();
-                if (keyAndIv != null) {
-                    request.put("key", keyAndIv[0]);
-                    request.put("iv", keyAndIv[1]);
-                }
-            }
+            EncryptUtils.putRandomKeyAndIvIntoRequest(appLogInstance, request);
 
             String url =
                     appLogInstance
@@ -67,11 +60,10 @@ class Configure extends BaseWorker {
                                     mEngine.getUriConfig().getSettingUri(),
                                     true,
                                     Level.L1);
-            JSONObject config =
+            final JSONObject config =
                     appLogInstance
                             .getApi()
                             .config(Api.filterQuery(url, EncryptUtils.KEYS_CONFIG_QUERY), request);
-
             final ConfigManager configManager = mEngine.getConfig();
 
             if (null != appLogInstance.getDataObserverHolder()) {
@@ -84,11 +76,6 @@ class Configure extends BaseWorker {
             if (config != null) {
                 configManager.setConfig(config);
 
-                // 禁用monitor
-                if (!configManager.isMonitorEnabled()) {
-                    mEngine.disableMonitor();
-                }
-
                 mEngine.checkAbConfiger();
                 if (mEngine.getConfig().getInitConfig().isEventFilterEnable()) {
                     String spName =
@@ -98,6 +85,21 @@ class Configure extends BaseWorker {
                             AbstractEventFilter.parseFilterFromServer(
                                     mEngine.getContext(), spName, config));
                 }
+
+                LogUtils.sendJsonFetcher(
+                        "fetch_log_settings_end",
+                        new EventBus.DataFetcher() {
+                            @Override
+                            public Object fetch() {
+                                JSONObject data = new JSONObject();
+                                JsonUtils.mergeJsonObject(config, data);
+                                try {
+                                    data.put("appId", appLogInstance.getAppId());
+                                } catch (Throwable ignored) {
+                                }
+                                return data;
+                            }
+                        });
                 return true;
             }
         }

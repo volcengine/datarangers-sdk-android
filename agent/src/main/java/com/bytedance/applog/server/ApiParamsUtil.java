@@ -14,11 +14,11 @@ import com.bytedance.applog.IExtraParams;
 import com.bytedance.applog.Level;
 import com.bytedance.applog.UriConfig;
 import com.bytedance.applog.engine.Engine;
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.util.EncryptUtils;
 import com.bytedance.applog.util.NetworkUtils;
 import com.bytedance.applog.util.PrivateAgreement;
 import com.bytedance.applog.util.SensitiveUtils;
-import com.bytedance.applog.util.TLog;
 import com.bytedance.applog.util.UIUtils;
 
 import org.json.JSONObject;
@@ -143,7 +143,7 @@ public final class ApiParamsUtil {
         }
         params.put(Api.KEY_OS_VERSION, ov);
         // net不从header取，直接取当前值，对齐内部版
-        String access = NetworkUtils.getNetworkAccessType(context);
+        String access = NetworkUtils.getNetworkAccessType(context, false);
         if (!TextUtils.isEmpty(access)) {
             params.put("ac", access);
         }
@@ -237,8 +237,10 @@ public final class ApiParamsUtil {
                     }
                 }
             }
-        } catch (Exception e) {
-            TLog.ysnp(e);
+        } catch (Throwable e) {
+            appLogInstance
+                    .getLogger()
+                    .error(LogInfo.Category.REQUEST, "Add extra params failed.", e);
         }
     }
 
@@ -285,7 +287,7 @@ public final class ApiParamsUtil {
             try {
                 value = type.cast(ret);
             } catch (Throwable t) {
-                TLog.ysnp(t);
+                appLogInstance.getLogger().error(LogInfo.Category.REQUEST, "Cast type failed.", t);
             }
         }
         if (value == null) {

@@ -7,9 +7,9 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.text.TextUtils;
 
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.SensitiveUtils;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -41,8 +41,13 @@ public class AppKeyLoader extends BaseLoader {
                 info.put(Api.KEY_APPKEY, bundle.getString(appKey));
             }
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global().error("Load app key failed.", e);
         }
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "AppKey";
     }
 }

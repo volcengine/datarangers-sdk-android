@@ -45,4 +45,9 @@ class RomLoader extends BaseLoader {
         }
         return true;
     }
+
+    @Override
+    protected String getName() {
+        return "Rom";
+    }
 }

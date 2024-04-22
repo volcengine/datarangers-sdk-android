@@ -2,8 +2,8 @@
 package com.bytedance.applog.engine;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.InitConfig;
 import com.bytedance.applog.util.ReflectUtils;
@@ -15,7 +15,7 @@ public class DomSenderTest {
 
     @Before
     public void setUp() {
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         InitConfig config = new InitConfig("1234", "channel");
         AppLog.init(appContext, config);
     }

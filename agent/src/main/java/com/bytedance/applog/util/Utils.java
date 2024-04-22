@@ -7,9 +7,9 @@ import android.text.TextUtils;
 
 import androidx.annotation.Nullable;
 
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.manager.DeviceManager;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -17,9 +17,11 @@ import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.UUID;
 
 /**
  * @author shiyanlong
@@ -74,7 +76,7 @@ public class Utils {
             return procName;
         }
         sProcessName = getProcessNameFromProc();
-        TLog.d("getProcessName: " + sProcessName);
+        LoggerImpl.global().debug("getProcessName: " + sProcessName);
         return sProcessName;
     }
 
@@ -126,8 +128,8 @@ public class Utils {
                     String key = iter.next();
                     newHeader.put(key, oldHeader.opt(key));
                 }
-            } catch (JSONException ignore) {
-                TLog.ysnp(ignore);
+            } catch (Throwable e) {
+                LoggerImpl.global().error("copy json error", e);
             }
         }
         return newHeader;
@@ -160,7 +162,9 @@ public class Utils {
     }
 
     public static boolean equals(String s1, String s2) {
-        return (TextUtils.isEmpty(s1) && TextUtils.isEmpty(s2) || s1 != null && s1.equals(s2));
+        boolean bothNull = TextUtils.isEmpty(s1) && TextUtils.isEmpty(s2);
+        boolean equals = s1 != null && s1.equals(s2);
+        return bothNull || equals;
     }
 
     public static String getYesNoString(boolean bool) {
@@ -171,32 +175,12 @@ public class Utils {
         }
     }
 
-    public static JSONObject transferHeaderOaid(final JSONObject oldHeader) {
-        JSONObject newHeader = null;
-        if (oldHeader != null) {
-            newHeader = new JSONObject();
-            Utils.copy(newHeader, oldHeader);
-            // for event header, replace oaid json with oaid id string
-            try {
-                // TODO OAID
-//                JSONObject oaid = newHeader.optJSONObject(Dr.KEY_OAID);
-//                String oaidString = Dr.oaidObj2id(oaid);
-//                if (!TextUtils.isEmpty(oaidString)) {
-//                    newHeader.put(Dr.KEY_OAID, oaidString);
-//                }
-            } catch (Exception e) {
-                TLog.ysnp(e);
-            }
-        }
-        return newHeader;
-    }
-
     public static void closeSafely(Closeable res) {
         if (res != null) {
             try {
                 res.close();
             } catch (Throwable e) {
-                TLog.e(e);
+                LoggerImpl.global().error("closeSafely error", e);
             }
         }
     }
@@ -206,7 +190,7 @@ public class Utils {
             try {
                 res.close();
             } catch (Throwable e) {
-                TLog.e(e);
+                LoggerImpl.global().error("closeSafely error", e);
             }
         }
     }
@@ -216,7 +200,7 @@ public class Utils {
             try {
                 db.endTransaction();
             } catch (Throwable e) {
-                TLog.ysnp(e);
+                LoggerImpl.global().error("endDbTransactionSafely error", e);
             }
         }
     }
@@ -255,11 +239,21 @@ public class Utils {
             input = new BufferedReader(new InputStreamReader(p.getInputStream()), 1024);
             line = input.readLine();
             p.destroy();
-        } catch (Throwable ex) {
-            TLog.e(ex);
+        } catch (Throwable e) {
+            LoggerImpl.global().error("getSysPropByExec error", e);
         } finally {
             Utils.closeSafely(input);
         }
         return line;
+    }
+
+    /**
+     * 获取唯一的event id
+     *
+     * @return String
+     */
+    public static synchronized String getUniqueEventId() {
+        return UUID.randomUUID().toString().replace("-", "").toLowerCase()
+                + System.currentTimeMillis();
     }
 }

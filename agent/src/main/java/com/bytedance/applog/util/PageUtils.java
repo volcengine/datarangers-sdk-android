@@ -8,9 +8,10 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.text.TextUtils;
+import android.view.View;
 
 import com.bytedance.applog.IPageMeta;
-import com.bytedance.applog.annotation.PageMeta;
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONObject;
 
@@ -39,6 +40,8 @@ public class PageUtils {
     private static final List<Class<?>> SUPPORT_ACTIVITY_PAGE_CLASSES = new ArrayList<>();
     /** 支持的Fragment页面类型 */
     private static final List<Class<?>> SUPPORT_FRAGMENT_PAGE_CLASSES = new ArrayList<>();
+
+    private static final List<String> loggerTags = Collections.singletonList("PageUtils");
 
     /** 初始化页面类型Class */
     static {
@@ -70,15 +73,10 @@ public class PageUtils {
             try {
                 return ((IPageMeta) page).title();
             } catch (Throwable e) {
-                TLog.e("Cannot get title from IPageMeta.", e);
+                LoggerImpl.global().error(loggerTags, "Cannot get title from IPageMeta", e);
             }
         }
-        if (page.getClass().isAnnotationPresent(PageMeta.class)) {
-            PageMeta meta = page.getClass().getAnnotation(PageMeta.class);
-            if (null != meta && !TextUtils.isEmpty(meta.title())) {
-                return meta.title();
-            }
-        }
+
         if (page instanceof Activity) {
             if (!TextUtils.isEmpty(((Activity) page).getTitle())) {
                 return ((Activity) page).getTitle().toString();
@@ -100,7 +98,7 @@ public class PageUtils {
                     }
                 }
             } catch (Exception e) {
-                TLog.e("Cannot get title from activity label.", e);
+                LoggerImpl.global().error(loggerTags, "Cannot get title from activity label", e);
             }
         }
         return page.getClass().getName();
@@ -120,13 +118,7 @@ public class PageUtils {
             try {
                 return ((IPageMeta) clz).path();
             } catch (Throwable e) {
-                TLog.e("Cannot get path from IPageMeta.", e);
-            }
-        }
-        if (clz.getClass().isAnnotationPresent(PageMeta.class)) {
-            PageMeta meta = clz.getClass().getAnnotation(PageMeta.class);
-            if (null != meta && !TextUtils.isEmpty(meta.path())) {
-                return meta.path();
+                LoggerImpl.global().error(loggerTags, "Cannot get path from IPageMeta", e);
             }
         }
         return clz.getClass().getCanonicalName();
@@ -182,7 +174,8 @@ public class PageUtils {
             try {
                 return ((IPageMeta) page).pageProperties();
             } catch (Throwable e) {
-                TLog.e("Cannot get track properties from activity.", e);
+                LoggerImpl.global()
+                        .error(loggerTags, "Cannot get track properties from activity", e);
             }
         }
         return null;
@@ -196,12 +189,12 @@ public class PageUtils {
      */
     public static boolean isPageClass(Class<?> pageClass) {
         for (Class<?> clz : SUPPORT_ACTIVITY_PAGE_CLASSES) {
-            if (pageClass.isAssignableFrom(clz)) {
+            if (clz.isAssignableFrom(pageClass)) {
                 return true;
             }
         }
         for (Class<?> clz : SUPPORT_FRAGMENT_PAGE_CLASSES) {
-            if (pageClass.isAssignableFrom(clz)) {
+            if (clz.isAssignableFrom(pageClass)) {
                 return true;
             }
         }
@@ -244,12 +237,12 @@ public class PageUtils {
      * @param fragment Object
      * @return Activity|null
      */
-    public static Activity getFragmentActivity(Object fragment) {
+    public static Object getFragmentActivity(Object fragment) {
         if (isFragment(fragment)) {
             // Fragment单独处理name，添加activity的title
             try {
                 Method getActivityMethod = fragment.getClass().getMethod("getActivity");
-                return (Activity) getActivityMethod.invoke(fragment);
+                return getActivityMethod.invoke(fragment);
             } catch (Throwable ignored) {
             }
         }
@@ -262,8 +255,98 @@ public class PageUtils {
      * @param fragment Object
      * @return String
      */
-    public static String getFragmentActivityName(Object fragment) {
-        Activity activity = getFragmentActivity(fragment);
-        return null != activity ? activity.getClass().getName() : "";
+    public static String getFragmentActivityName(Object fragment, Object defaultActivity) {
+        Object activity = getFragmentActivity(fragment);
+        if (null != activity) {
+            return activity.getClass().getName();
+        }
+        if (null != defaultActivity) {
+            return defaultActivity.getClass().getName();
+        }
+        return "";
+    }
+
+    /**
+     * 获取父Fragment
+     *
+     * @param fragment Fragment对象
+     * @return Fragment
+     */
+    public static Object getParentFragment(Object fragment) {
+        try {
+            Method getParentFragmentMethod = fragment.getClass().getMethod("getParentFragment");
+            return getParentFragmentMethod.invoke(fragment);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * 判断Fragment是否Resumed
+     *
+     * @param fragment Fragment
+     * @return true
+     */
+    public static boolean isFragmentResumed(Object fragment) {
+        try {
+            Method method = fragment.getClass().getMethod("isResumed");
+            return null != method && Boolean.TRUE.equals(method.invoke(fragment));
+        } catch (Throwable ignored) {
+            // ignored
+        }
+        return false;
+    }
+
+    /**
+     * 判断Fragment是否隐藏
+     *
+     * @param fragment Fragment
+     * @return true
+     */
+    public static boolean isFragmentHidden(Object fragment) {
+        try {
+            Method method = fragment.getClass().getMethod("isHidden");
+            return null != method && Boolean.TRUE.equals(method.invoke(fragment));
+        } catch (Throwable ignored) {
+            // ignored
+        }
+        return false;
+    }
+
+    /**
+     * 判断Fragment是否userVisibleHint
+     *
+     * @param fragment Fragment
+     * @return true
+     */
+    public static boolean isFragmentUserVisibleHint(Object fragment) {
+        try {
+            Method method = fragment.getClass().getMethod("getUserVisibleHint");
+            return null != method && Boolean.TRUE.equals(method.invoke(fragment));
+        } catch (Throwable ignored) {
+            // ignored
+        }
+        return false;
+    }
+
+    /**
+     * 获取Fragment的根View
+     *
+     * @param fragment Fragment
+     * @return View
+     */
+    public static View getFragmentRootView(Object fragment) {
+        try {
+            Method method = fragment.getClass().getMethod("getView");
+            if (null != method) {
+                Object v = method.invoke(fragment);
+                if (v instanceof View) {
+                    return (View) v;
+                }
+            }
+        } catch (Throwable ignored) {
+            // ignored
+        }
+        return null;
     }
 }

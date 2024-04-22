@@ -8,14 +8,20 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.bytedance.applog.exposure.ViewExposureConfig;
+import com.bytedance.applog.encryptor.CustomEncryptor;
+import com.bytedance.applog.encryptor.IEncryptor;
+import com.bytedance.applog.encryptor.IEncryptorType;
+import com.bytedance.applog.event.AutoTrackEventType;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.network.INetworkClient;
-import com.bytedance.applog.util.Assert;
 import com.bytedance.applog.util.Utils;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
+import javax.net.ssl.SSLSocketFactory;
 
 /**
  * 此接口，都是初始化参数，在初始化时传入，运行时不再修改。 <br>
@@ -28,7 +34,7 @@ import java.util.Map;
 public class InitConfig {
     private static final String DEFAULT_DB_NAME = "bd_tea_agent.db";
 
-    private String mAid;
+    private final String mAid;
 
     private boolean mAutoStart = true;
 
@@ -36,7 +42,7 @@ public class InitConfig {
 
     private String mClearKey;
 
-    private IEncryptor mEncrytor;
+    private CustomEncryptor mEncrytor;
 
     private String mGaid;
 
@@ -45,8 +51,6 @@ public class InitConfig {
     private ILogger mLogger;
 
     private String mRegion;
-
-    private String mAliyunUdid;
 
     private IPicker mPicker;
 
@@ -90,9 +94,6 @@ public class InitConfig {
 
     private INetworkClient mWrapperClient;
 
-    /** 是否自动激活 */
-    private boolean mAutoActive = true;
-
     /** 是否在后台时禁用部分worker */
     private boolean mSilenceInBackground;
 
@@ -115,8 +116,6 @@ public class InitConfig {
     private String mSpName;
 
     private ISensitiveInfoProvider mSensitiveInfoProvider;
-
-    private boolean mMacEnable = true;
 
     private boolean mImeiEnable = true;
 
@@ -147,15 +146,15 @@ public class InitConfig {
     private IpcDataChecker mIpcDataChecker = null;
 
     /** 初始化的UUID */
-    private String mUserUniqueId = null;
+    @Deprecated private String mUserUniqueId = null;
 
     /** 初始化的UUID类型 */
-    private String mUserUniqueIdType = null;
+    @Deprecated private String mUserUniqueIdType = null;
 
     /** 埋点采集开关，默认开 */
     private boolean trackEventEnabled = true;
 
-    /** 是否开启鸿蒙设备采集 */
+    /** 是否开启鸿蒙设备采集，默认关闭 */
     private boolean harmonyEnabled = false;
 
     /** 采集Fragment事件，默认关闭 */
@@ -164,33 +163,54 @@ public class InitConfig {
     /** 安全开关：反作弊 */
     private boolean metaSecEnabled = true;
 
-    /** 采集OAID，默认开启 */
-    private boolean oaidEnabled = true;
-
     /** 采集Android ID，默认开启 */
     private boolean androidIdEnabled = true;
 
     /** 曝光事件采集开关，默认关闭 */
     private boolean exposureEnabled = false;
 
-    /** 监控开关，默认关闭 */
-    private boolean monitorEnabled = false;
-
-    /** 曝光事件采集的全局配置 */
-    private ViewExposureConfig exposureConfig = null;
+    /**
+     * 滑动事件采集开关，默认关闭
+     */
+    private boolean scrollObserveEnabled = false;
 
     /** 采集屏幕方向开关，默认关闭 */
     private boolean screenOrientationEnabled = false;
 
-    /** 采集页面离开事件，默认关闭 */
-    private boolean trackPageLeaveEnabled = false;
-
     /** 采集运营商信息开关，默认开启 */
     private boolean operatorInfoEnabled = true;
 
+    /** 全埋点事件类型 */
+    private int autoTrackEventType = AutoTrackEventType.PAGE | AutoTrackEventType.CLICK;
+
+    /** 设备迁移开关 */
+    private boolean migrateEnabled = true;
+
+    /** GAID采集开关 */
+    private boolean gaidEnabled = BuildConfig.IS_I18N;
+
+    /** GAID timeout */
+    private int gaidTimeOutMilliSeconds = 2 * 1000;
+
+    /** 采集应用crash */
+    private int trackCrashType = 0;
+
+    /** 自定义 HTTP 请求头里的 Header */
+    private Map<String, String> httpHeaders = null;
+
+    /** 使用 PageMeta 注解，默认开启 */
+    private boolean isPageMetaAnnotationEnable = true;
+
+    /** Launch / Terminate 采集开关 */
+    private boolean isLaunchTerminateEnabled = true;
+
+    /** BaseLoader 过滤器 */
+    private final Set<String> loaderFilters = new HashSet<>(4);
+
+    /** SSLSocketFactory */
+    private SSLSocketFactory sslSocketFactory;
+
     public InitConfig(@NonNull final String aid, @NonNull final String channel) {
-        Assert.notEmpty(aid, "App id must not be empty!");
-        Assert.notEmpty(channel, "Channel must not be empty!");
         mAid = aid;
         mChannel = channel;
     }
@@ -343,25 +363,6 @@ public class InitConfig {
     }
 
     /**
-     * 设置阿里云的udid
-     *
-     * @param aliyunUdid aliyunUdid
-     */
-    public InitConfig setAliyunUdid(final String aliyunUdid) {
-        mAliyunUdid = aliyunUdid;
-        return this;
-    }
-
-    /**
-     * 获取阿里云的udid
-     *
-     * @return aliyunUdid
-     */
-    public String getAliyunUdid() {
-        return mAliyunUdid;
-    }
-
-    /**
      * 设置当前进程类型
      *
      * <p>0：系统根据进程名判断是否为主进程：进程名包含":"为子进程；不含为主进程。
@@ -433,7 +434,12 @@ public class InitConfig {
     }
 
     public InitConfig setEncryptor(final IEncryptor encryptor) {
-        mEncrytor = encryptor;
+        mEncrytor = new CustomEncryptor(encryptor, IEncryptorType.DEFAULT_ENCRYPTOR);
+        return this;
+    }
+
+    public InitConfig setEncryptor(final IEncryptor encryptor, final String encryptorType) {
+        mEncrytor = new CustomEncryptor(encryptor, encryptorType);
         return this;
     }
 
@@ -575,20 +581,24 @@ public class InitConfig {
      * @param userUniqueId
      * @return
      */
+    @Deprecated
     public InitConfig setUserUniqueId(String userUniqueId) {
         mUserUniqueId = userUniqueId;
         return this;
     }
 
+    @Deprecated
     public String getUserUniqueId() {
         return mUserUniqueId;
     }
 
+    @Deprecated
     public InitConfig setUserUniqueIdType(String type) {
         mUserUniqueIdType = type;
         return this;
     }
 
+    @Deprecated
     public String getUserUniqueIdType() {
         return mUserUniqueIdType;
     }
@@ -666,14 +676,6 @@ public class InitConfig {
         mSilenceInBackground = silenceInBackground;
     }
 
-    public boolean isAutoActive() {
-        return mAutoActive;
-    }
-
-    public void setAutoActive(final boolean autoActive) {
-        mAutoActive = autoActive;
-    }
-
     public boolean isAbEnable() {
         return mAbEnable;
     }
@@ -747,10 +749,6 @@ public class InitConfig {
         mSensitiveInfoProvider = sensitiveInfoProvider;
     }
 
-    public boolean isMacEnable() {
-        return mMacEnable;
-    }
-
     public boolean isDeferredALinkEnabled() {
         return mDeferredALinkEnabled;
     }
@@ -774,10 +772,6 @@ public class InitConfig {
 
     public boolean isH5BridgeAllowAll() {
         return mH5BridgeAllowAll;
-    }
-
-    public void setMacEnable(final boolean macEnable) {
-        mMacEnable = macEnable;
     }
 
     public InitConfig setH5BridgeEnable(boolean mH5BridgeEnable) {
@@ -907,19 +901,6 @@ public class InitConfig {
     }
 
     /**
-     * 设置OAID采集开关
-     *
-     * @param enabled 打开
-     */
-    public void setOaidEnabled(boolean enabled) {
-        this.oaidEnabled = enabled;
-    }
-
-    public boolean isOaidEnabled() {
-        return this.oaidEnabled;
-    }
-
-    /**
      * 设置AndroidId采集开关
      *
      * @param enabled 打开
@@ -941,15 +922,6 @@ public class InitConfig {
         return this.screenOrientationEnabled;
     }
 
-    /** 设置采集页面离开事件开关 */
-    public void setTrackPageLeaveEnabled(boolean enabled) {
-        this.trackPageLeaveEnabled = enabled;
-    }
-
-    public boolean isTrackPageLeaveEnabled() {
-        return this.trackPageLeaveEnabled;
-    }
-
     /**
      * 设置曝光事件采集开关
      *
@@ -961,19 +933,6 @@ public class InitConfig {
 
     public boolean isExposureEnabled() {
         return exposureEnabled;
-    }
-
-    /**
-     * 设置是否打开监控开关
-     *
-     * @param monitorEnabled 监控开关
-     */
-    public void setMonitorEnabled(boolean monitorEnabled) {
-        this.monitorEnabled = monitorEnabled;
-    }
-
-    public boolean isMonitorEnabled() {
-        return this.monitorEnabled;
     }
 
     /**
@@ -989,20 +948,128 @@ public class InitConfig {
         return this.operatorInfoEnabled;
     }
 
-    public ViewExposureConfig getExposureConfig() {
-        return exposureConfig;
+    /**
+     * 设置全埋点的事件类型
+     *
+     * @param type BavEventType类型
+     */
+    public void setAutoTrackEventType(int type) {
+        this.autoTrackEventType = type;
+    }
+
+    public int getAutoTrackEventType() {
+        return this.autoTrackEventType;
     }
 
     /**
-     * 曝光事件采集的全局配置
+     * 设置设备迁移开关
      *
-     * @param exposureConfig
+     * @param enabled true:开启
      */
-    public void setExposureConfig(ViewExposureConfig exposureConfig) {
-        this.exposureConfig = exposureConfig;
+    public void setMigrateEnabled(boolean enabled) {
+        this.migrateEnabled = enabled;
+    }
+
+    public boolean isMigrateEnabled() {
+        return migrateEnabled;
+    }
+
+    /**
+     * 设置是否采集app crash
+     *
+     * @param options 采集的类型
+     */
+    public void setTrackCrashType(int options) {
+        this.trackCrashType = options;
+    }
+
+    public int getTrackCrashType() {
+        return trackCrashType;
+    }
+
+    /**
+     * 设置GAID开关
+     *
+     * @param enabled true: 开启
+     */
+    public void setGaidEnabled(boolean enabled) {
+        gaidEnabled = enabled;
+    }
+
+    public boolean isGaidEnabled() {
+        return gaidEnabled;
+    }
+
+    /**
+     * 获取自定义的 HTTP 请求 header
+     *
+     * @return
+     */
+    public Map<String, String> getHttpHeaders() {
+        return httpHeaders;
+    }
+
+    /**
+     * 设置自定义的 HTTP 氢气 header
+     *
+     * @param httpHeaders
+     */
+    public void setHttpHeaders(Map<String, String> httpHeaders) {
+        this.httpHeaders = httpHeaders;
+    }
+
+    public boolean isPageMetaAnnotationEnable() {
+        return isPageMetaAnnotationEnable;
+    }
+
+    public void setPageMetaAnnotationEnable(boolean pageMetaAnnotationEnable) {
+        isPageMetaAnnotationEnable = pageMetaAnnotationEnable;
+    }
+
+    public int getGaidTimeOutMilliSeconds() {
+        return gaidTimeOutMilliSeconds;
+    }
+
+    public void setGaidTimeOutMilliSeconds(int gaidTimeOutMilliSeconds) {
+        this.gaidTimeOutMilliSeconds = gaidTimeOutMilliSeconds;
+    }
+
+    public Set<String> getLoaderFilters() {
+        return loaderFilters;
+    }
+
+    public void addLoaderFilter(String loaderKey) {
+        this.loaderFilters.add(loaderKey);
+    }
+
+    public boolean isScrollObserveEnabled() {
+        return scrollObserveEnabled;
+    }
+
+    public void setScrollObserveEnabled(boolean scrollObserveEnabled) {
+        this.scrollObserveEnabled = scrollObserveEnabled;
+    }
+
+    public boolean isLaunchTerminateEnabled() {
+        return isLaunchTerminateEnabled;
+    }
+
+    public void setLaunchTerminateEnabled(boolean launchTerminateEnabled) {
+        isLaunchTerminateEnabled = launchTerminateEnabled;
+    }
+
+    public SSLSocketFactory getSslSocketFactory() {
+        return sslSocketFactory;
+    }
+
+    public void setSslSocketFactory(SSLSocketFactory sslSocketFactory) {
+        this.sslSocketFactory = sslSocketFactory;
+    }
+
+    public void setAutoActive(final boolean autoActive) {
     }
 
     public interface IpcDataChecker {
-        boolean checkIpcData(String[] strings);
+        boolean checkIpcData(@NonNull String[] strings);
     }
 }

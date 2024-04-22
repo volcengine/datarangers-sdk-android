@@ -5,15 +5,17 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.bytedance.applog.IEventObserver;
+import com.bytedance.applog.IPresetEventObserver;
+import com.bytedance.applog.event.EventObserverImpl;
 
 import org.json.JSONObject;
 
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /** @author linguoqing */
-public class EventObserverHolder implements IEventObserver {
+public class EventObserverHolder implements IEventObserver, IPresetEventObserver {
 
-    private final CopyOnWriteArraySet<IEventObserver> mEventObserver = new CopyOnWriteArraySet<>();
+    private final CopyOnWriteArraySet<EventObserverImpl> mEventObserver = new CopyOnWriteArraySet<>();
 
     public EventObserverHolder() {}
 
@@ -37,19 +39,36 @@ public class EventObserverHolder implements IEventObserver {
         }
     }
 
-    public void addEventObserver(IEventObserver listener) {
+    public void addEventObserver(EventObserverImpl listener) {
         if (listener != null) {
             mEventObserver.add(listener);
         }
     }
 
-    public void removeEventObserver(IEventObserver listener) {
+    public void removeEventObserver(EventObserverImpl listener) {
         if (listener != null) {
             mEventObserver.remove(listener);
         }
     }
 
-    public int getObserverSize() {
-        return mEventObserver.size();
+    @Override
+    public void onPageEnter(JSONObject params) {
+        for (IPresetEventObserver iPresetEventObserver : mEventObserver) {
+            iPresetEventObserver.onPageEnter(params);
+        }
+    }
+
+    @Override
+    public void onPageLeave(JSONObject params) {
+        for (IPresetEventObserver iPresetEventObserver : mEventObserver) {
+            iPresetEventObserver.onPageLeave(params);
+        }
+    }
+
+    @Override
+    public void onLaunch(JSONObject params) {
+        for (IPresetEventObserver iPresetEventObserver : mEventObserver) {
+            iPresetEventObserver.onLaunch(params);
+        }
     }
 }

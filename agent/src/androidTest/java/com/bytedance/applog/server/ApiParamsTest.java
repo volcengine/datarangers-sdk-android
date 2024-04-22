@@ -2,8 +2,9 @@
 package com.bytedance.applog.server;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.AppLogInstance;
@@ -26,7 +27,7 @@ public class ApiParamsTest extends BaseAppLogTest {
 
     @Test
     public void appendNetParams() throws JSONException {
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("test", "test");
         jsonObject.put(Api.KEY_VERSION_CODE, 1);
@@ -44,7 +45,7 @@ public class ApiParamsTest extends BaseAppLogTest {
 
     @Test
     public void appendParamsToMap() throws Exception {
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("test", "test");
         jsonObject.put(Api.KEY_VERSION_CODE, 1);

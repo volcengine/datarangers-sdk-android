@@ -7,8 +7,12 @@ import android.util.Base64;
 import android.util.Pair;
 
 import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.IAppLogInstance;
+import com.bytedance.applog.encryptor.CustomEncryptor;
+import com.bytedance.applog.encryptor.IEncryptor;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.IEncryptor;
+
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -16,6 +20,8 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -28,9 +34,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 public class EncryptUtils {
 
-    /**
-     * key for encrypted original url query
-     */
+    /** key for encrypted original url query */
     private static final String KEY_TT_INFO = "tt_info";
 
     private static final String KEY_TT_DATA = "tt_data";
@@ -42,15 +46,15 @@ public class EncryptUtils {
     public static final String KEY_EVENT_FILTER = "event_filter";
 
     public static final String[] KEYS_CONFIG_QUERY =
-            new String[]{KEY_TT_DATA, KEY_DEVICE_PLATFORM};
+            new String[] {KEY_TT_DATA, KEY_DEVICE_PLATFORM};
 
     public static final String[] KEYS_REPORT_QUERY =
-            new String[]{
-                    Api.KEY_AID, Api.KEY_VERSION_CODE, Api.KEY_AB_VERSION, KEY_IID, KEY_DEVICE_PLATFORM
+            new String[] {
+                Api.KEY_AID, Api.KEY_VERSION_CODE, Api.KEY_AB_VERSION, KEY_IID, KEY_DEVICE_PLATFORM
             };
 
     private static final String[] KEYS_PLAINTEXT =
-            new String[]{Api.KEY_AID, Api.KEY_APP_VERSION, KEY_TT_DATA, Api.KEY_DEVICE_ID};
+            new String[] {Api.KEY_AID, Api.KEY_APP_VERSION, KEY_TT_DATA, Api.KEY_DEVICE_ID};
 
     private final AppLogInstance appLogInstance;
 
@@ -103,20 +107,17 @@ public class EncryptUtils {
                 bos.write(str.getBytes("UTF-8"));
             }
         } catch (Throwable tr) {
-            TLog.ysnp(tr);
+            appLogInstance
+                    .getLogger()
+                    .error(
+                            Collections.singletonList("EncryptUtils"),
+                            "Convert string to bytes failed",
+                            tr);
         } finally {
             Utils.closeSafely(zos);
         }
         byte[] data = bos.toByteArray();
-        if (appLogInstance.getEncryptAndCompress() && null != appLogInstance.getInitConfig()) {
-            IEncryptor encryptor = appLogInstance.getInitConfig().getEncryptor();
-            if (encryptor != null) {
-                data = encryptor.encrypt(data, data.length);
-            } else {
-                data = internalEncrypt(data, data.length);
-            }
-        }
-        return data;
+        return encrypt(data);
     }
 
     public byte[] encrypt(byte[] data) {
@@ -139,7 +140,9 @@ public class EncryptUtils {
             method.setAccessible(true);
             return (byte[]) method.invoke(null, inputData, length);
         } catch (Throwable e) {
-            TLog.e("encrypt failed, please add encryptor library or custom encryption.", e);
+            appLogInstance
+                    .getLogger()
+                    .error("encrypt failed, please add encryptor library or custom encryption.", e);
         }
         return inputData;
     }
@@ -182,6 +185,19 @@ public class EncryptUtils {
         return null;
     }
 
+    public static void putRandomKeyAndIvIntoRequest(IAppLogInstance appLogInstance, JSONObject request) {
+        if (appLogInstance.getEncryptAndCompress()) {
+            String[] keyAndIv = EncryptUtils.genRandomKeyAndIv();
+            if (keyAndIv != null) {
+                try {
+                    request.put("key", keyAndIv[0]);
+                    request.put("iv", keyAndIv[1]);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
     private static byte[] transStrCharToByte(String str) {
         int len = str.length();
         byte[] result = new byte[len];
@@ -198,8 +214,7 @@ public class EncryptUtils {
             IvParameterSpec ivSpec = new IvParameterSpec(transStrCharToByte(iv));
             cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
             return cipher.doFinal(cipherText);
-        } catch (Throwable e) {
-            TLog.e(e);
+        } catch (Throwable ignored) {
         }
         return null;
     }
@@ -226,5 +241,20 @@ public class EncryptUtils {
             Utils.closeSafely(in);
         }
         return out.toByteArray();
+    }
+
+    public static HashMap<String, String> putContentTypeHeader(HashMap<String, String> headers, AppLogInstance appLogInstance) {
+        String encryptorTypeStr = CustomEncryptor.DEFAULT_ENCRYPTOR;
+        if (appLogInstance.getInitConfig() != null
+                && appLogInstance.getInitConfig().getEncryptor() != null
+                && appLogInstance.getInitConfig().getEncryptor() instanceof CustomEncryptor) {
+            encryptorTypeStr = ((CustomEncryptor)appLogInstance.getInitConfig().getEncryptor()).encryptorType();
+        }
+        if (appLogInstance.getEncryptAndCompress()) {
+            headers.put("Content-Type", "application/octet-stream;tt-data=" + encryptorTypeStr);
+        } else {
+            headers.put("Content-Type", "application/json; charset=utf-8");
+        }
+        return headers;
     }
 }

@@ -39,6 +39,7 @@
 -dontwarn androidx.annotation.WorkerThread
 
 -keep class com.bytedance.applog.picker.DomSender { public *; }
+-keep class com.bytedance.applog.tracker.WebViewUtil { public *; }
 
 # 排除混淆webview的loadUrl
 -keepclassmembers class * {

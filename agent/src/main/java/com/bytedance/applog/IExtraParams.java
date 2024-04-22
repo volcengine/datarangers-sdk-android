@@ -1,6 +1,9 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import java.util.HashMap;
 
 /**
@@ -13,5 +16,6 @@ public interface IExtraParams {
      * @param level
      * @return extraParams
      */
-    HashMap<String, String> getExtraParams(Level level);
+    @Nullable
+    HashMap<String, String> getExtraParams(@NonNull Level level);
 }

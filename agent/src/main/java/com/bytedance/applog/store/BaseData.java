@@ -8,16 +8,21 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.bytedance.applog.log.AbstractAppLogLogger;
+import com.bytedance.applog.log.IAppLogLogger;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.AbsSingleton;
 import com.bytedance.applog.util.JsonUtils;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.Utils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -46,6 +51,8 @@ public abstract class BaseData implements Cloneable {
 
     static final String COL_UUID = Api.KEY_USER_UNIQUE_ID;
 
+    static final String COL_UUID_TYPE = Api.KEY_USER_UNIQUE_ID_TYPE;
+
     static final String COL_SSID = Api.KEY_SSID;
 
     static final String COL_NT = "nt";
@@ -58,8 +65,13 @@ public abstract class BaseData implements Cloneable {
 
     static final String COL_PROPERTIES = "properties";
 
+    static final String COL_LOCAL_EVENT_ID = "local_event_id";
+
     /** 格式化的时间字符串。不存DB，可以从TS计算而来。 */
     static final String COL_DATE_TIME = Api.KEY_DATETIME;
+
+    /** logger标签 */
+    protected List<String> loggerTags;
 
     long dbId;
 
@@ -73,6 +85,8 @@ public abstract class BaseData implements Cloneable {
     public long uid;
 
     public String uuid;
+
+    public String uuidType;
 
     public String ssid;
 
@@ -91,6 +105,9 @@ public abstract class BaseData implements Cloneable {
     /** 额外的属性 */
     public JSONObject properties;
 
+    /** 本地事件ID */
+    public String localEventId;
+
     /** 每一个json字符串中，都有一个k_cls字段，对后台来说是冗余的 */
     private static final String KEY_CLASS = "k_cls";
 
@@ -105,6 +122,10 @@ public abstract class BaseData implements Cloneable {
 
     public BaseData() {
         setTs(0);
+        loggerTags = Collections.singletonList(getTableName());
+
+        // 本地的事件ID，保证唯一性
+        localEventId = Utils.getUniqueEventId();
     }
 
     public String getAppId() {
@@ -136,7 +157,6 @@ public abstract class BaseData implements Cloneable {
         registerZygote(map, new EventV3());
         registerZygote(map, new CustomEvent());
         registerZygote(map, new Profile(null, null));
-        registerZygote(map, new Trace());
         return map;
     }
 
@@ -151,18 +171,34 @@ public abstract class BaseData implements Cloneable {
      */
     protected List<String> getColumnDef() {
         return Arrays.asList(
-                COL_ID, "integer primary key autoincrement",
-                COL_TS, "integer",
-                COL_EID, "integer",
-                COL_NT, "integer",
-                COL_UID, "integer",
-                COL_SID, "varchar",
-                COL_UUID, "varchar",
-                COL_SSID, "varchar",
-                COL_AB, "varchar",
-                COL_EVENT_TYPE, "integer",
-                COL_APP_ID, "varchar",
-                COL_PROPERTIES, "varchar");
+                COL_ID,
+                "integer primary key autoincrement",
+                COL_TS,
+                "integer",
+                COL_EID,
+                "integer",
+                COL_NT,
+                "integer",
+                COL_UID,
+                "integer",
+                COL_SID,
+                "varchar",
+                COL_UUID,
+                "varchar",
+                COL_UUID_TYPE,
+                "varchar",
+                COL_SSID,
+                "varchar",
+                COL_AB,
+                "varchar",
+                COL_EVENT_TYPE,
+                "integer",
+                COL_APP_ID,
+                "varchar",
+                COL_PROPERTIES,
+                "varchar",
+                COL_LOCAL_EVENT_ID,
+                "varchar");
     }
 
     /**
@@ -180,11 +216,13 @@ public abstract class BaseData implements Cloneable {
         uid = c.getLong(i++);
         sid = c.getString(i++);
         uuid = c.getString(i++);
+        uuidType = c.getString(i++);
         ssid = c.getString(i++);
         abSdkVersion = c.getString(i++);
         eventType = c.getInt(i++);
         appId = c.getString(i++);
         String props = c.getString(i++);
+        localEventId = c.getString(i++);
         properties = new JSONObject();
         if (!TextUtils.isEmpty(props)) {
             try {
@@ -207,12 +245,14 @@ public abstract class BaseData implements Cloneable {
         cv.put(COL_NT, nt);
         cv.put(COL_UID, uid);
         cv.put(COL_SID, sid);
-        cv.put(COL_UUID, uuid);
+        cv.put(COL_UUID, Utils.toString(uuid));
+        cv.put(COL_UUID_TYPE, uuidType);
         cv.put(COL_SSID, ssid);
         cv.put(COL_AB, abSdkVersion);
         cv.put(COL_EVENT_TYPE, eventType);
         cv.put(COL_APP_ID, appId);
         cv.put(COL_PROPERTIES, null != properties ? properties.toString() : "");
+        cv.put(COL_LOCAL_EVENT_ID, localEventId);
     }
 
     public static String formatDateMS(final long ts) {
@@ -229,6 +269,7 @@ public abstract class BaseData implements Cloneable {
         obj.put(COL_TS, ts);
         obj.put(COL_APP_ID, appId);
         obj.put(COL_PROPERTIES, properties);
+        obj.put(COL_LOCAL_EVENT_ID, localEventId);
     }
 
     /**
@@ -252,10 +293,12 @@ public abstract class BaseData implements Cloneable {
         uid = 0;
         sid = null;
         uuid = null;
+        uuidType = null;
         ssid = null;
         abSdkVersion = null;
         appId = obj.optString(COL_APP_ID);
         properties = obj.optJSONObject(COL_PROPERTIES);
+        localEventId = obj.optString(COL_LOCAL_EVENT_ID, Utils.getUniqueEventId());
         return this;
     }
 
@@ -300,7 +343,7 @@ public abstract class BaseData implements Cloneable {
             obj.put(KEY_CLASS, getTableName());
             writeIpc(obj);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            getLogger().error(LogInfo.Category.EVENT, loggerTags, "JSON handle failed", e);
         }
         return obj;
     }
@@ -313,7 +356,7 @@ public abstract class BaseData implements Cloneable {
             obj = writePack();
             //            obj.put("$appId", appId);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            getLogger().error(LogInfo.Category.EVENT, loggerTags, "JSON handle failed", e);
         }
         return obj;
     }
@@ -324,17 +367,30 @@ public abstract class BaseData implements Cloneable {
             BaseData data = ZYGOTES.get().get(obj.optString(KEY_CLASS, "")).clone();
             return data.readIpc(obj);
         } catch (Throwable e) {
-            TLog.ysnp(e);
+            LoggerImpl.global().error(LogInfo.Category.EVENT, "JSON handle failed", e);
         }
         return null;
+    }
+
+    public static void fillEventAppVersion(BaseData data, String appVersion) {
+        try {
+            JSONObject properties = data.getProperties();
+            if (properties == null) {
+                properties = new JSONObject();
+            }
+            properties.put(Api.KEY_EVENT_APP_VERSION, appVersion);
+            data.setProperties(properties);
+        } catch (Throwable ignored) {}
     }
 
     @Override
     public BaseData clone() {
         try {
-            return (BaseData) super.clone();
+            BaseData data = (BaseData) super.clone();
+            data.localEventId = Utils.getUniqueEventId();
+            return data;
         } catch (CloneNotSupportedException e) {
-            TLog.ysnp(e);
+            getLogger().error(LogInfo.Category.EVENT, loggerTags, "Clone data failed", e);
         }
         return null;
     }
@@ -357,7 +413,7 @@ public abstract class BaseData implements Cloneable {
             shortSid = "-";
         }
 
-        return "{" + name + ", " + getDetail() + ", " + shortSid + ", " + ts + "}";
+        return "{" + name + ", " + getDetail() + ", " + shortSid + ", " + ts + ", " + eid + ", " + sid + "}";
     }
 
     protected String getDetail() {
@@ -403,7 +459,7 @@ public abstract class BaseData implements Cloneable {
             JSONObject paramJson = new JSONObject(params);
             mergePropsToParams(toObj, paramJson);
         } catch (Throwable e) {
-            TLog.ysnp(e);
+            getLogger().error(LogInfo.Category.EVENT, loggerTags, "Merge params failed", e);
         }
     }
 
@@ -427,7 +483,15 @@ public abstract class BaseData implements Cloneable {
         try {
             toObj.put(COL_PARAM, finalJson);
         } catch (Throwable e) {
-            TLog.ysnp(e);
+            getLogger().error(LogInfo.Category.EVENT, loggerTags, "Merge params failed", e);
         }
+    }
+
+    protected IAppLogLogger getLogger() {
+        IAppLogLogger logger = AbstractAppLogLogger.getLogger(appId);
+        if (null != logger) {
+            return logger;
+        }
+        return LoggerImpl.global();
     }
 }

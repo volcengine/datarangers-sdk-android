@@ -1,6 +1,8 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.holder;
 
+import androidx.annotation.NonNull;
+
 import com.bytedance.applog.ISessionObserver;
 
 import org.json.JSONObject;
@@ -16,21 +18,21 @@ public class SessionObserverHolder implements ISessionObserver {
     public SessionObserverHolder() {}
 
     @Override
-    public void onSessionStart(long id, String sessionId) {
+    public void onSessionStart(long id, @NonNull String sessionId) {
         for (ISessionObserver iSessionObserver : mSessionObserver) {
             iSessionObserver.onSessionStart(id, sessionId);
         }
     }
 
     @Override
-    public void onSessionTerminate(long id, String sessionId, JSONObject appLog) {
+    public void onSessionTerminate(long id, @NonNull String sessionId, JSONObject appLog) {
         for (ISessionObserver iSessionObserver : mSessionObserver) {
             iSessionObserver.onSessionTerminate(id, sessionId, appLog);
         }
     }
 
     @Override
-    public void onSessionBatchEvent(long id, String sessionId, JSONObject appLog) {
+    public void onSessionBatchEvent(long id, @NonNull String sessionId, JSONObject appLog) {
         for (ISessionObserver iSessionObserver : mSessionObserver) {
             iSessionObserver.onSessionBatchEvent(id, sessionId, appLog);
         }

@@ -2,14 +2,13 @@
 package com.bytedance.applog.manager;
 
 import android.annotation.SuppressLint;
-import android.content.Context;
 import android.os.Build;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.BuildConfig;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.RomUtils;
 import com.bytedance.applog.util.SystemPropertiesWithCache;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -21,9 +20,11 @@ import org.json.JSONObject;
 class BuildLoader extends BaseLoader {
 
     private final ConfigManager configManager;
+    private final AppLogInstance appLogInstance;
 
-    BuildLoader(Context context, ConfigManager configManager) {
+    BuildLoader(final AppLogInstance appLogInstance, ConfigManager configManager) {
         super(true, false);
+        this.appLogInstance = appLogInstance;
         this.configManager = configManager;
     }
 
@@ -40,8 +41,7 @@ class BuildLoader extends BaseLoader {
         info.put(Api.KEY_GIT_HASH, BuildConfig.GIT_HASH);
 
         if (RomUtils.isHarmonyUI()
-                && null != configManager.getInitConfig()
-                && configManager.getInitConfig().isHarmonyEnabled()) {
+                && configManager.isHarmonyEnabled()) {
             // 加载鸿蒙系统信息
             info.put(Api.KEY_OS, "Harmony");
             try {
@@ -51,7 +51,7 @@ class BuildLoader extends BaseLoader {
                         Api.KEY_OS_VERSION,
                         SystemPropertiesWithCache.get("hw_sc.build.platform.version"));
             } catch (Throwable e) {
-                TLog.e("loadHarmonyInfo", e);
+                appLogInstance.getLogger().error("loadHarmonyInfo failed", e);
             }
         } else {
             info.put(Api.KEY_OS, "Android");
@@ -59,5 +59,10 @@ class BuildLoader extends BaseLoader {
             info.put(Api.KEY_OS_VERSION, Build.VERSION.RELEASE);
         }
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "Build";
     }
 }

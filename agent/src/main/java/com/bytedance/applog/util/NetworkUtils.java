@@ -7,6 +7,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.telephony.TelephonyManager;
 
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.network.NetworkConnectChangeReceiver;
 
 /**
@@ -85,7 +86,11 @@ public class NetworkUtils {
     }
 
     public static String getNetworkAccessType(Context context) {
-        return getNetworkAccessType(getNetworkType(context));
+        return getNetworkAccessType(context, true);
+    }
+
+    public static String getNetworkAccessType(Context context, boolean isResume) {
+        return getNetworkAccessType(getNetworkTypeFast(context, isResume));
     }
 
     /**
@@ -140,6 +145,9 @@ public class NetworkUtils {
             } else if (ConnectivityManager.TYPE_MOBILE == type) {
                 TelephonyManager mgr =
                         (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+                if (mgr == null) {
+                    return NetworkType.NONE;
+                }
                 switch (mgr.getNetworkType()) {
                     case TelephonyManager.NETWORK_TYPE_UMTS:
                     case TelephonyManager.NETWORK_TYPE_EVDO_0:
@@ -167,15 +175,19 @@ public class NetworkUtils {
     }
 
     public static NetworkType getNetworkTypeFast(Context context) {
+        return getNetworkTypeFast(context, true);
+    }
+
+    private static NetworkType getNetworkTypeFast(Context context, boolean isResume) {
         checkNetworkTypeInit(context);
-        adjustNetwork(context);
+        if (isResume) {
+            adjustNetwork(context);
+        }
         return sNetworkType;
     }
 
-    public static boolean isNetworkAvailableFast(Context context) {
-        checkNetworkTypeInit(context);
-        adjustNetwork(context);
-        return sNetworkType.isAvailable();
+    public static boolean isNetworkAvailableFast(Context context, boolean isResume) {
+        return getNetworkTypeFast(context, isResume).isAvailable();
     }
 
     public static boolean isNetworkAvailable(Context context) {
@@ -199,13 +211,18 @@ public class NetworkUtils {
 
     private static void registerReceiver(Context context) {
         if (!sIsReceiverRegisted && context != null) {
-            IntentFilter filter = new IntentFilter();
-            filter.addAction("android.net.conn.CONNECTIVITY_CHANGE");
-            filter.addAction("android.net.wifi.WIFI_STATE_CHANGED");
-            filter.addAction("android.net.wifi.STATE_CHANGE");
-            context.getApplicationContext()
-                    .registerReceiver(new NetworkConnectChangeReceiver(), filter);
-            sIsReceiverRegisted = true;
+            try {
+                IntentFilter filter = new IntentFilter();
+                filter.addAction("android.net.conn.CONNECTIVITY_CHANGE");
+                filter.addAction("android.net.wifi.WIFI_STATE_CHANGED");
+                filter.addAction("android.net.wifi.STATE_CHANGE");
+                context.getApplicationContext()
+                        .registerReceiver(new NetworkConnectChangeReceiver(), filter);
+            } catch (Throwable e) {
+                LoggerImpl.global().debug("registerReceiver failed, because: " + e.getMessage());
+            } finally {
+                sIsReceiverRegisted = true;
+            }
         }
     }
 

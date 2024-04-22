@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewTreeObserver
+import com.bytedance.applog.R
 import java.lang.ref.WeakReference
 
 /**
@@ -15,13 +16,14 @@ import java.lang.ref.WeakReference
  * @date: 2022/3/30
  */
 typealias ViewTreeChangeCallback = (Activity) -> Unit
+typealias ActivityStoppedCallback = ((Activity?, Boolean) -> Unit)
 
 /**
  * ViewTree 变化观察者，以 Activity 为粒度进行检测
  * 当当前 Activity 的 ViewTree 发生变动会触发回调
  */
 class ViewTreeChangeObserver(val application: Application) :
-    Application.ActivityLifecycleCallbacks {
+    Application.ActivityLifecycleCallbacks, View.OnAttachStateChangeListener {
 
     private var currentActivityRef = WeakReference<Activity>(null)
 
@@ -40,6 +42,7 @@ class ViewTreeChangeObserver(val application: Application) :
         ViewTreeObserver.OnWindowFocusChangeListener { invokeCallback() }
 
     private var viewTreeChangeCallback: ViewTreeChangeCallback? = null
+    private var onActivityStoppedCallback: ActivityStoppedCallback? = null
 
     private fun invokeCallback() {
         val activity = currentActivityRef.get() ?: return
@@ -73,9 +76,38 @@ class ViewTreeChangeObserver(val application: Application) :
         }
     }
 
+    fun registerActivityStoppedCallback(callback: ActivityStoppedCallback) {
+        onActivityStoppedCallback = callback
+    }
+
     override fun onActivityResumed(activity: Activity) {
         currentActivityRef = WeakReference(activity)
         val rootView = activity.window.decorView
+        observeViewTree(rootView)
+    }
+
+    /**
+     * 这里去检查一下 View.rootView 是否已经注册了监听，因为如果是 Dialog 的话，和 Activity 不在一个 ViewTree 下，这里要单独去注册监听
+     */
+    fun checkObserveViewTree(view: View) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && view.isAttachedToWindow) {
+            observeViewTree(view.rootView)
+        } else {
+            view.addOnAttachStateChangeListener(this)
+        }
+    }
+
+    override fun onActivityPaused(activity: Activity) {
+        val rootView = activity.window.decorView
+        disposeViewTree(rootView)
+    }
+
+    private fun observeViewTree(rootView: View) {
+        if (rootView.getTag(R.id.applog_tag_view_exposure_observe_flag) == true) {
+            return
+        }
+        rootView.setTag(R.id.applog_tag_view_exposure_observe_flag, true)
+
         val viewTreeObserver = rootView.viewTreeObserver
         // 注册各种 ViewTree 变化的监听
         viewTreeObserver.addOnGlobalFocusChangeListener(onGlobalFocusChangeListener)
@@ -89,8 +121,11 @@ class ViewTreeChangeObserver(val application: Application) :
         }
     }
 
-    override fun onActivityPaused(activity: Activity) {
-        val rootView = activity.window.decorView
+    private fun disposeViewTree(rootView: View) {
+        if (rootView.getTag(R.id.applog_tag_view_exposure_observe_flag) != true) {
+            return
+        }
+        rootView.setTag(R.id.applog_tag_view_exposure_observe_flag, false)
         val viewTreeObserver = rootView.viewTreeObserver
         // 取消注册各种 ViewTree 变化的监听
         viewTreeObserver.removeOnGlobalFocusChangeListener(onGlobalFocusChangeListener)
@@ -113,7 +148,9 @@ class ViewTreeChangeObserver(val application: Application) :
     }
 
     override fun onActivityStopped(activity: Activity) {
-
+        currentActivityRef.get()?.let { resumeActivity ->
+            onActivityStoppedCallback?.invoke(activity, resumeActivity == activity)
+        }
     }
 
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {
@@ -122,5 +159,14 @@ class ViewTreeChangeObserver(val application: Application) :
 
     override fun onActivityDestroyed(activity: Activity) {
 
+    }
+
+    override fun onViewAttachedToWindow(view: View?) {
+        view ?: return
+        observeViewTree(view.rootView)
+        view.removeOnAttachStateChangeListener(this)
+    }
+
+    override fun onViewDetachedFromWindow(v: View?) {
     }
 }

@@ -27,9 +27,12 @@ class NetLoader extends BaseLoader {
     @Override
     protected boolean doLoad(final JSONObject info) throws JSONException {
         String access = NetworkUtils.getNetworkAccessType(mApp);
-
-        // TODO: 2019/4/12 header字段中的网络状况，应该刷新。
         DeviceManager.putString(info, Api.KEY_ACCESS, access);
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "Net";
     }
 }

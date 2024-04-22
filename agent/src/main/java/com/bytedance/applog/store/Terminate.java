@@ -7,8 +7,8 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -40,18 +40,18 @@ public class Terminate extends BaseData {
 
     @Override
     public int readDb(@NonNull final Cursor c) {
-        TLog.ysnp(null);
+        getLogger().error(LogInfo.Category.EVENT, loggerTags, "Not allowed");
         return 0;
     }
 
     @Override
     protected void writeDb(@NonNull final ContentValues cv) {
-        TLog.ysnp(null);
+        getLogger().error(LogInfo.Category.EVENT, loggerTags, "Not allowed");
     }
 
     @Override
     protected void writeIpc(@NonNull final JSONObject obj) {
-        TLog.ysnp(null);
+        getLogger().error(LogInfo.Category.EVENT, loggerTags, "Not allowed");
     }
 
     @Override
@@ -67,7 +67,9 @@ public class Terminate extends BaseData {
             obj.put(COL_UID, uid);
         }
         obj.put(COL_UUID, TextUtils.isEmpty(uuid) ? JSONObject.NULL : uuid);
-
+        if (!TextUtils.isEmpty(uuidType)) {
+            obj.put(Api.KEY_USER_UNIQUE_ID_TYPE_NEW, uuidType);
+        }
         if (!TextUtils.isEmpty(ssid)) {
             obj.put(COL_SSID, ssid);
         }
@@ -89,7 +91,7 @@ public class Terminate extends BaseData {
 
     @Override
     protected BaseData readIpc(@NonNull final JSONObject obj) {
-        TLog.ysnp(null);
+        getLogger().error(LogInfo.Category.EVENT, loggerTags, "Not allowed");
         return this;
     }
 

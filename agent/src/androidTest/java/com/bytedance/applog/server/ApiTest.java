@@ -1,4 +1,4 @@
-// Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
+package com.bytedance.applog.server;// Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 // package com.bytedance.applog.server;
 //
 // import android.support.test.runner.AndroidJUnit4;

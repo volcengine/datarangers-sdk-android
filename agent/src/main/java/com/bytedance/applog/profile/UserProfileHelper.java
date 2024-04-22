@@ -6,9 +6,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.engine.Engine;
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.Utils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -82,7 +84,11 @@ public class UserProfileHelper {
         if (!force) {
             boolean timeEnough = System.currentTimeMillis() - TIME_ARRAY[method] > ONE_MINITE;
             changed = jsonObject != null && SIGN_ARRAY[method] != jsonObject.toString().hashCode();
-            TLog.d("exec " + method + ", " + timeEnough + ", " + changed);
+            engine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.USER_PROFILE,
+                            "exec " + method + ", " + timeEnough + ", " + changed);
 
             if (!timeEnough) {
                 if (callback != null) {
@@ -102,7 +108,7 @@ public class UserProfileHelper {
                     && !TextUtils.isEmpty(usrProfileUrl)) {
                 String path = String.format(USER_PROFILE_PATH, aid, METHOD_ARRAY[method]);
                 String url = usrProfileUrl + path;
-                String sb = getBody(engine.getAppLog().getHeader(), jsonObject);
+                JSONObject sb = getBody(engine.getAppLog(), jsonObject);
 
                 final UserProfileCallback innerCb =
                         new UserProfileCallback() {
@@ -126,7 +132,9 @@ public class UserProfileHelper {
                     handler.post(reporter);
                 } else {
                     if (Looper.myLooper() == Looper.getMainLooper()) {
-                        TLog.ysnp(null);
+                        engine.getAppLog()
+                                .getLogger()
+                                .error(LogInfo.Category.USER_PROFILE, "Not allowed on main looper");
                     }
                     reporter.run();
                 }
@@ -149,16 +157,19 @@ public class UserProfileHelper {
      *
      * @param data 自定义用户画像
      */
-    private static String getBody(JSONObject appLogHeader, JSONObject data) {
+    private static JSONObject getBody(AppLogInstance appLogInstance, JSONObject data) {
+        JSONObject appLogHeader = appLogInstance.getHeader();
         JSONObject body = new JSONObject();
         try {
-            body.put("header", getHeader(appLogHeader));
+            body.put("header", getHeader(appLogInstance, appLogHeader));
             body.put("profile", data);
             body.put("user", getUser(appLogHeader));
         } catch (JSONException e) {
-            TLog.e(e);
+            appLogInstance
+                    .getLogger()
+                    .error(LogInfo.Category.USER_PROFILE, "JSON handle failed", e);
         }
-        return body.toString();
+        return body;
     }
 
     private static JSONObject getUser(JSONObject appLogHeader) throws JSONException {
@@ -171,16 +182,20 @@ public class UserProfileHelper {
         return jsonObject;
     }
 
-    private static JSONObject getHeader(JSONObject appLogHeader) {
+    private static JSONObject getHeader(AppLogInstance appLogInstance, JSONObject appLogHeader) {
         if (null != appLogHeader) {
             try {
                 JSONObject jsonObject = new JSONObject(appLogHeader, HEADER);
                 jsonObject.put(
-                        Api.KEY_SDK_VERSION, appLogHeader.opt(Api.KEY_SDK_VERSION).toString());
-                jsonObject.put(Api.KEY_TZ_OFFSET, appLogHeader.opt(Api.KEY_TZ_OFFSET).toString());
+                        Api.KEY_SDK_VERSION,
+                        Utils.toString(appLogHeader.optString(Api.KEY_SDK_VERSION)));
+                jsonObject.put(
+                        Api.KEY_TZ_OFFSET, Utils.toString(appLogHeader.opt(Api.KEY_TZ_OFFSET)));
                 return jsonObject;
             } catch (JSONException e) {
-                TLog.e(e);
+                appLogInstance
+                        .getLogger()
+                        .error(LogInfo.Category.USER_PROFILE, "JSON handle failed", e);
             }
         }
         return new JSONObject();

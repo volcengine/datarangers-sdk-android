@@ -1,6 +1,8 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.holder;
 
+import androidx.annotation.NonNull;
+
 import com.bytedance.applog.IDataObserver;
 
 import org.json.JSONObject;
@@ -19,7 +21,7 @@ public class DataObserverHolder implements IDataObserver {
     public DataObserverHolder() {}
 
     @Override
-    public void onIdLoaded(String did, String iid, String ssid) {
+    public void onIdLoaded(@NonNull String did, @NonNull String iid, @NonNull String ssid) {
         for (IDataObserver observer : mDataObserver) {
             observer.onIdLoaded(did, iid, ssid);
         }
@@ -29,11 +31,11 @@ public class DataObserverHolder implements IDataObserver {
     public void onRemoteIdGet(
             boolean changed,
             String oldDid,
-            String newDid,
-            String oldIid,
-            String newIid,
-            String oldSsid,
-            String newSsid) {
+            @NonNull String newDid,
+            @NonNull String oldIid,
+            @NonNull String newIid,
+            @NonNull String oldSsid,
+            @NonNull String newSsid) {
         for (IDataObserver observer : mDataObserver) {
             observer.onRemoteIdGet(changed, oldDid, newDid, oldIid, newIid, oldSsid, newSsid);
         }
@@ -47,14 +49,14 @@ public class DataObserverHolder implements IDataObserver {
     }
 
     @Override
-    public void onRemoteAbConfigGet(boolean changed, JSONObject abConfig) {
+    public void onRemoteAbConfigGet(boolean changed, @NonNull JSONObject abConfig) {
         for (IDataObserver observer : mDataObserver) {
             observer.onRemoteAbConfigGet(changed, abConfig);
         }
     }
 
     @Override
-    public void onAbVidsChange(final String vids, final String extVids) {
+    public void onAbVidsChange(@NonNull final String vids, @NonNull final String extVids) {
         for (IDataObserver observer : mDataObserver) {
             observer.onAbVidsChange(vids, extVids);
         }

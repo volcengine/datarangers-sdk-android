@@ -2,9 +2,11 @@
 package com.bytedance.applog;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.bytedance.applog.util.ReflectUtils;
+import com.bytedance.applog.util.UriConstants;
 
 import org.junit.*;
 import org.junit.runner.*;
@@ -18,7 +20,7 @@ import org.junit.runner.*;
 abstract public class BaseAppLogTest {
     @BeforeClass
     public static void setUpAppLog() throws InterruptedException {
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         InitConfig config = new InitConfig("1234", "channel");
         config.setUriConfig(UriConstants.DEFAULT);
         AppLog.init(appContext, config);

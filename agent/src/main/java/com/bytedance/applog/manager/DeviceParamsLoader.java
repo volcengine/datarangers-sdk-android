@@ -25,7 +25,7 @@ public class DeviceParamsLoader extends BaseLoader {
 
     @Override
     protected boolean doLoad(final JSONObject info) throws JSONException, SecurityException {
-        if (!configManager.isOperatorInfoDisabled()) {
+        if (configManager.isOperatorInfoEnabled()) {
             final String carrier = HardwareUtils.getOperatorName(mApp);
             if (Utils.isNotEmpty(carrier)) {
                 DeviceManager.putString(info, Api.KEY_CARRIER, carrier);
@@ -41,5 +41,10 @@ public class DeviceParamsLoader extends BaseLoader {
         String openUdid = mManager.getProvider().getOpenUdid();
         DeviceManager.putString(info, Api.KEY_OPEN_UDID, openUdid);
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "DeviceParams";
     }
 }

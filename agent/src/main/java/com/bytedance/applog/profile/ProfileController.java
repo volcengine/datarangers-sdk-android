@@ -4,17 +4,21 @@ package com.bytedance.applog.profile;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
+import android.text.TextUtils;
 
 import com.bytedance.applog.engine.Engine;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.DeviceManager;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.store.BaseData;
 import com.bytedance.applog.store.Profile;
 import com.bytedance.applog.util.JsonUtils;
-import com.bytedance.applog.util.TLog;
 import com.bytedance.applog.util.Utils;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.HttpURLConnection;
@@ -126,6 +130,10 @@ public class ProfileController implements Handler.Callback {
     }
 
     private void handleSet(ProfileDataWrapper profileKV) {
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.USER_PROFILE, "Handle set:{}", profileKV);
+
         boolean overOneMin = false;
         boolean sameValue = true;
         boolean isSameSsid = false;
@@ -150,7 +158,9 @@ public class ProfileController implements Handler.Callback {
                             sameValue = false;
                         }
                     } catch (Throwable e) {
-                        TLog.e(e);
+                        mEngine.getAppLog()
+                                .getLogger()
+                                .error(LogInfo.Category.USER_PROFILE, "JSON handle failed", e);
                     }
                 }
             } else {
@@ -161,12 +171,18 @@ public class ProfileController implements Handler.Callback {
         }
 
         if (!isSameSsid || overOneMin || !sameValue) {
-            TLog.d("invoke profile set.");
+            mEngine.getAppLog()
+                    .getLogger()
+                    .debug(LogInfo.Category.USER_PROFILE, "invoke profile set.");
             saveAndSend(profileKV);
         }
     }
 
     private void handleSetOnce(ProfileDataWrapper profileKV) {
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.USER_PROFILE, "Handle setOnce:{}", profileKV);
+
         boolean isSameSsid = false;
         if (ssid != null) {
             isSameSsid = ssid.equals(mEngine.getAppLog().getSsid());
@@ -182,23 +198,35 @@ public class ProfileController implements Handler.Callback {
             setForSetOnce.add(key);
         }
         if (!isSameSsid || !hasSend) {
-            TLog.d("invoke profile set once.");
+            mEngine.getAppLog()
+                    .getLogger()
+                    .debug(LogInfo.Category.USER_PROFILE, "invoke profile set once.");
+
             saveAndSend(profileKV);
         }
     }
 
     private void handleIncrement(ProfileDataWrapper profileKV) {
-        TLog.d("invoke profile increment.");
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.USER_PROFILE, "Handle increment:{}", profileKV);
+
         saveAndSend(profileKV);
     }
 
     private void handleUnset(ProfileDataWrapper profileKV) {
-        TLog.d("invoke profile unset.");
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.USER_PROFILE, "Handle unset:{}", profileKV);
+
         saveAndSend(profileKV);
     }
 
     private void handleAppend(ProfileDataWrapper profileKV) {
-        TLog.d("invoke profile append.");
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.USER_PROFILE, "Handle append:{}", profileKV);
+
         saveAndSend(profileKV);
     }
 
@@ -211,7 +239,12 @@ public class ProfileController implements Handler.Callback {
                         PROFILE_PREFIX + profileDataWrapper.apiName,
                         profileDataWrapper.jsonObject.toString());
         ArrayList<BaseData> profileList = new ArrayList<>();
-        mEngine.getSession().fillSessionParams(mEngine.getAppLog(), profile);
+        if (TextUtils.isEmpty(mEngine.getSessionId())) {
+            //  没有 session 信息先创建
+            mEngine.getSession().process(mEngine.getAppLog(), profile, profileList);
+        } else {
+            mEngine.getSession().fillSessionParams(mEngine.getAppLog(), profile);
+        }
         mEngine.sendToRangersEventVerify(profile);
         profileList.add(profile);
         mEngine.getDbStoreV2().saveAll(profileList);
@@ -223,14 +256,24 @@ public class ProfileController implements Handler.Callback {
         if (mEngine == null) {
             return;
         }
+
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(
+                        LogInfo.Category.USER_PROFILE,
+                        "Handle flush with dr state:{}",
+                        mEngine.getDm().getRegisterState());
+
         if (mEngine.getDm().getRegisterState() != DeviceManager.STATE_EMPTY) {
             Map<String, List<Profile>> uuidProfileMap =
                     mEngine.getDbStoreV2().queryAllProfiles(mEngine.getAppLog().getAppId());
             if (uuidProfileMap.isEmpty()) {
                 return;
             }
+            Set<String> profileIdSet = new HashSet<>();
             for (Map.Entry<String, List<Profile>> entry : uuidProfileMap.entrySet()) {
                 String uuid = entry.getKey();
+                JSONArray jsonArray = new JSONArray();
                 try {
                     JSONObject header = new JSONObject();
                     Utils.copy(header, mEngine.getAppLog().getHeader());
@@ -239,18 +282,22 @@ public class ProfileController implements Handler.Callback {
                     header.remove(Api.KEY_SSID);
 
                     final JSONObject obj = new JSONObject();
-                    JSONArray jsonArray = new JSONArray();
                     for (BaseData profile : entry.getValue()) {
                         jsonArray.put(profile.toPackJson());
                         if (Utils.isNotEmpty(profile.ssid) && !header.has(Api.KEY_SSID)) {
                             header.put(Api.KEY_SSID, profile.ssid);
                         }
+                        profileIdSet.add(profile.localEventId);
                     }
 
                     // 如果没有ssid，则重新注册获取ssid
                     if (!mEngine.fetchIfNoSsidInHeader(header)) {
                         // 注册失败后等待下次打包重试注册
-                        TLog.w("Register to get ssid by temp header failed.");
+                        mEngine.getAppLog()
+                                .getLogger()
+                                .warn(
+                                        LogInfo.Category.USER_PROFILE,
+                                        "Register to get ssid by temp header failed.");
                         continue;
                     }
 
@@ -259,20 +306,21 @@ public class ProfileController implements Handler.Callback {
                     obj.put(Api.KEY_HEADER, header);
                     obj.put(Api.KEY_TIME_SYNC, Api.mTimeSync);
                     obj.put(Api.KEY_LOCAL_TIME, System.currentTimeMillis() / 1000);
-                    byte[] data =
-                            mEngine.getAppLog()
-                                    .getApi()
-                                    .getEncryptUtils()
-                                    .transformStrToByte(obj.toString());
                     mEngine.getDbStoreV2().deleteProfiles(entry.getValue());
                     String[] uris = new String[] {mEngine.getUriConfig().getProfileUri()};
                     int responseCode =
-                            mEngine.getAppLog().getApi().send(uris, data, mEngine.getConfig());
+                            mEngine.getAppLog().getApi().sendLog(uris, obj, mEngine.getConfig());
                     if (responseCode != HttpURLConnection.HTTP_OK) {
                         mEngine.getDbStoreV2().saveProfiles(entry.getValue());
+                        sendProfilesUpload2Devtools(profileIdSet, false);
+                    } else {
+                        sendProfilesUpload2Devtools(profileIdSet, true);
                     }
                 } catch (Throwable e) {
-                    TLog.e(e);
+                    mEngine.getAppLog()
+                            .getLogger()
+                            .error(LogInfo.Category.USER_PROFILE, "Flush failed", e);
+                    sendProfilesUpload2Devtools(profileIdSet, false);
                 }
             }
         }
@@ -301,5 +349,39 @@ public class ProfileController implements Handler.Callback {
                     + jsonObject
                     + '}';
         }
+    }
+
+    /**
+     *
+     * @param eventIds profile id数组
+     * @param success 是否上报成功
+     */
+    private void sendProfilesUpload2Devtools(final Set<String> eventIds, final boolean success) {
+        if (null == eventIds || eventIds.isEmpty()) {
+            return;
+        }
+
+        // launch
+        final String appId = mEngine.getAppLog().getAppId();
+        LogUtils.sendJsonFetcher(
+                "event_upload_eid",
+                new EventBus.DataFetcher() {
+                    @Override
+                    public Object fetch() {
+                        JSONObject copy = new JSONObject();
+                        JSONArray idArray = new JSONArray();
+                        try {
+                            for (String id : eventIds) {
+                                idArray.put(id);
+                            }
+                            copy.put("$$APP_ID", appId);
+                            copy.put("$$EVENT_LOCAL_ID_ARRAY", idArray);
+                            copy.put("$$UPLOAD_STATUS", success ? "success" : "failed");
+                        } catch (JSONException ignored) {
+
+                        }
+                        return copy;
+                    }
+                });
     }
 }

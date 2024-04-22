@@ -2,8 +2,9 @@
 package com.bytedance.applog;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import android.text.TextUtils;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.manager.DeviceManager;
@@ -23,7 +24,7 @@ public class AbTest {
     private DeviceManager dm;
     @BeforeClass
     public static void setUpAppLog() throws InterruptedException {
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        Context appContext = ApplicationProvider.getApplicationContext();
         InitConfig config = new InitConfig("1234", "channel");
         config.setHandleLifeCycle(false);
         AppLog.init(appContext, config);

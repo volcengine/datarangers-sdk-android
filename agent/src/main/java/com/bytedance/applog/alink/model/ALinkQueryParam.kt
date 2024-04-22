@@ -20,7 +20,6 @@ class ALinkQueryParam : BaseData() {
     // 新增参数
     var androidId: String? = null
     var imei: String? = null
-    var oaid: String? = null
     var googleAid: String? = null
     var os: String? = null
     var osVersion: String? = null
@@ -49,7 +48,6 @@ class ALinkQueryParam : BaseData() {
             put("user_unique_id", userUniqueId)
             put("androidid", androidId)
             put("imei", imei)
-            put("oaid", oaid)
             put("os_version", osVersion)
             put("device_model", deviceModel)
             put("google_aid", googleAid)
@@ -75,7 +73,6 @@ class ALinkQueryParam : BaseData() {
             userUniqueId = optString("user_unique_id", null)
             androidId = optString("androidid", null)
             imei = optString("imei", null)
-            oaid = optString("oaid", null)
             osVersion = optString("os_version", null)
             deviceModel = optString("device_model", null)
             googleAid = optString("google_aid", null)

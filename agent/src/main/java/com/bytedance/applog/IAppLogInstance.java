@@ -9,16 +9,17 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 
-import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 
 import com.bytedance.applog.alink.IALinkListener;
+import com.bytedance.applog.event.EventBuilder;
 import com.bytedance.applog.event.IEventHandler;
 import com.bytedance.applog.exposure.ViewExposureManager;
 import com.bytedance.applog.filter.AbstractEventFilter;
-import com.bytedance.applog.monitor.IMonitor;
 import com.bytedance.applog.network.INetworkClient;
+import com.bytedance.applog.oneid.IDBindCallback;
 import com.bytedance.applog.profile.UserProfileCallback;
 import com.bytedance.applog.store.AccountCacheHelper;
 import com.bytedance.applog.store.BaseData;
@@ -41,6 +42,7 @@ public interface IAppLogInstance {
      *
      * @return appid
      */
+    @NonNull
     String getAppId();
 
     /**
@@ -62,13 +64,14 @@ public interface IAppLogInstance {
      *
      * @param appContext IAppContext
      */
-    void setAppContext(IAppContext appContext);
+    void setAppContext(@NonNull IAppContext appContext);
 
     /**
      * 获取IAppContext实例
      *
      * @return IAppContext
      */
+    @Nullable
     IAppContext getAppContext();
 
     /**
@@ -97,9 +100,6 @@ public interface IAppLogInstance {
      */
     void init(@NonNull final Context context, @NonNull final InitConfig config, Activity activity);
 
-    /** 初始化安全包 */
-    void initMetaSec(final Context context);
-
     /** 启动。请在获得权限之后再调用start */
     void start();
 
@@ -110,6 +110,7 @@ public interface IAppLogInstance {
      */
     boolean hasStarted();
 
+    @Nullable
     InitConfig getInitConfig();
 
     /**
@@ -123,6 +124,7 @@ public interface IAppLogInstance {
      * 强制将内存的事件存储到DB中，同步执行 <br>
      * 当发生crash时，请调用此接口。
      */
+    @WorkerThread
     void flush();
 
     boolean isH5BridgeEnable();
@@ -137,38 +139,24 @@ public interface IAppLogInstance {
      */
     void setUserID(final long id);
 
-    void setAppLanguageAndRegion(String language, String region);
+    void setAppLanguageAndRegion(@NonNull String language, @NonNull String region);
 
-    void setGoogleAid(String gaid);
+    void setGoogleAid(@NonNull String gaid);
 
     String addNetCommonParams(Context context, String url, boolean isApi, Level level);
 
     void putCommonParams(Context context, Map<String, String> params, boolean isApi, Level level);
 
     /** 设置uuid，立即生效 */
-    void setUserUniqueID(final String id);
+    void setUserUniqueID(@Nullable final String id);
 
-    /** 设置uuid，type:uuid类型 */
-    void setUserUniqueID(final String id, final String type);
+    /** 设置uuid，type:uuid类型，立即生效 */
+    void setUserUniqueID(@Nullable final String id, @Nullable final String type);
 
     /** 设置用于添加自定义url params的接口，能够覆盖默认header值 */
     void setExtraParams(IExtraParams iExtraParams);
 
-    /**
-     * 设置激活的自定义参数回调
-     *
-     * @param callback IActiveCustomParamsCallback
-     */
-    void setActiveCustomParams(IActiveCustomParamsCallback callback);
-
-    /**
-     * 查询自定义的激活参数回调
-     *
-     * @return IActiveCustomParamsCallback
-     */
-    IActiveCustomParamsCallback getActiveCustomParams();
-
-    void setTouchPoint(String touchPoint);
+    void setTouchPoint(@NonNull String touchPoint);
 
     /**
      * 添加自定义上报信息； <br>
@@ -184,9 +172,12 @@ public interface IAppLogInstance {
     void removeHeaderInfo(final String key);
 
     /** set the ab_sdk_version */
-    void setExternalAbVersion(final String version);
+    void setExternalAbVersion(@NonNull final String version);
+
+    String getExternalAbVersion();
 
     /** 获取ab_sdk_version */
+    @NonNull
     String getAbSdkVersion();
 
     /**
@@ -204,11 +195,22 @@ public interface IAppLogInstance {
     void pullAbTestConfigs();
 
     /**
+     * 超时拉取AB实验配置
+     *
+     * @param timeout 超时时长：毫秒
+     * @param callback 回调
+     */
+    void pullAbTestConfigs(int timeout, IPullAbTestConfigCallback callback);
+
+    /**
      * 设置拉取ab实验间隔毫秒数
      *
      * @param mills 毫秒
      */
     void setPullAbTestConfigsThrottleMills(Long mills);
+
+    /** 清空AB实验的缓存 */
+    void clearAbTestConfigsCache();
 
     /**
      * Use {@link IAppLogInstance#getAppId()} instead
@@ -228,7 +230,7 @@ public interface IAppLogInstance {
      *
      * @param ua ua
      */
-    void setUserAgent(final String ua);
+    void setUserAgent(@NonNull final String ua);
 
     /** 上报v3事件。 */
     void onEventV3(@NonNull final String event);
@@ -241,6 +243,15 @@ public interface IAppLogInstance {
 
     void onEventV3(@NonNull final String event, @Nullable final Bundle params);
 
+    /**
+     * 新建一个事件
+     *
+     * @param event 事件名
+     * @return 事件构建器
+     * @since 6.14.0
+     */
+    EventBuilder newEvent(@NonNull final String event);
+
     /** misc event 点播SDK */
     void onMiscEvent(@NonNull String logType, @Nullable JSONObject obj);
 
@@ -250,9 +261,11 @@ public interface IAppLogInstance {
     boolean getEncryptAndCompress();
 
     /** 返回后台生成的did，如果没有，返回"" */
+    @NonNull
     String getDid();
 
     /** 返回客户端生成的udid，如果没有，返回"" global版本可能为空 */
+    @NonNull
     String getUdid();
 
     /** 添加session变化回调 sdk内部通过weak reference持有，不影响业务接口回收 */
@@ -266,6 +279,10 @@ public interface IAppLogInstance {
 
     void removeEventObserver(IEventObserver iEventObserver);
 
+    void addEventObserver(IEventObserver iEventObserver, IPresetEventObserver iPresetEventObserver);
+
+    void removeEventObserver(IEventObserver iEventObserver, IPresetEventObserver iPresetEventObserver);
+
     /**
      * 为{@link AccountCacheHelper}设置新的Account，用于存储信息。 设置后，会将{@link
      * AccountCacheHelper}中原本存储在mCache的信息全部迁移到Account当中
@@ -273,25 +290,35 @@ public interface IAppLogInstance {
     void setAccount(final Account account);
 
     /** 返回iid，如果没有，返回"" */
+    @NonNull
     String getIid();
 
     /** 返回ssid，如果没有，返回"" */
+    @NonNull
     String getSsid();
 
     /** UserUniqueId(user_id)，如果没有，返回"" */
+    @NonNull
     String getUserUniqueID();
 
     /** user_id，如果没有，返回"" */
+    @Nullable
     String getUserID();
 
     /** clientUdid，如果没有，返回"" */
+    @NonNull
     String getClientUdid();
 
     /** openUdid，如果没有，返回"" */
+    @NonNull
     String getOpenUdid();
 
     /** applog运行时修改Uri 该接口只做以下几件事： 1. 设置新的uri 2. 重新register 3. 重新activate */
     void setUriRuntime(UriConfig config);
+
+    /** 返回当前最新的 uri 配置，如果没有初始化，返回null */
+    @Nullable
+    UriConfig getUriRuntime();
 
     /** 请确保已经调用了AppLog.init，初始化前无数据返回 */
     void getSsidGroup(Map<String, String> map);
@@ -307,8 +334,7 @@ public interface IAppLogInstance {
 
     void removeAllDataObserver();
 
-    //    int getSuccRate();
-
+    @NonNull
     INetworkClient getNetClient();
 
     /** 获取header，header内容更新方式为引用替换，可以放心遍历获取字段 如需要修改header字段，请copy后再处理 */
@@ -320,17 +346,13 @@ public interface IAppLogInstance {
     /** 注册后返回的参数new_user,大于0为true,其余为false 不存sp,只存在内存中 */
     boolean isNewUser();
 
-    void onResume(Context context);
+    void onResume(@NonNull Context context);
 
-    void onPause(Context context);
+    void onPause(@NonNull Context context);
 
-    void onActivityResumed(Activity activity, int hashCode);
+    void onActivityResumed(@NonNull Activity activity, int hashCode);
 
     void onActivityPause();
-
-    void registerHeaderCustomCallback(IHeaderCustomTimelyCallback customTimelyCallback);
-
-    IHeaderCustomTimelyCallback getHeaderCustomCallback();
 
     /**
      * 设置profile信息，只能设置一次，后续设置无效，用于新用户
@@ -346,7 +368,7 @@ public interface IAppLogInstance {
      */
     void userProfileSync(JSONObject jsonObject, UserProfileCallback callback);
 
-    void startSimulator(final String cookie);
+    void startSimulator(@NonNull final String cookie);
 
     void setRangersEventVerifyEnable(boolean enable, String cookie);
 
@@ -362,10 +384,12 @@ public interface IAppLogInstance {
 
     void setEventFilterByClient(List<String> eventList, boolean isBlock);
 
+    @Nullable
     AbstractEventFilter getEventFilterByClient();
 
     Map<String, String> getRequestHeader();
 
+    @NonNull
     String getSessionId();
 
     /**
@@ -393,9 +417,11 @@ public interface IAppLogInstance {
     void activateALink(Uri uri);
 
     /** 获取sdk版本号 */
+    @NonNull
     String getSdkVersion();
 
     /** 获取所有ab配置 */
+    @NonNull
     JSONObject getAllAbTestConfigs();
 
     /** 隐私策略模式开关，设置后不存储上报事件 */
@@ -560,7 +586,7 @@ public interface IAppLogInstance {
      * @param view WebView
      * @param url URL参数
      */
-    void initH5Bridge(View view, String url);
+    void initH5Bridge(@NonNull View view, @NonNull String url);
 
     /**
      * 获取 View 曝光管理器
@@ -610,12 +636,23 @@ public interface IAppLogInstance {
     void stopDurationEvent(String eventName, JSONObject properties);
 
     /** 清除数据库中的数据 */
+    @WorkerThread
     void clearDb();
 
     /**
-     * 获取监控对象
+     * 初始化WebView的Bridge
      *
-     * @return IMonitor
+     * @param view WebView对象
+     * @param url path
      */
-    IMonitor getMonitor();
+    void initWebViewBridge(@NonNull View view, @NonNull String url);
+
+    /**
+     * 用户多口径绑定 ID
+     *
+     * @param identities
+     * @param callback
+     * @since 6.14.0
+     */
+    void bind(Map<String, String> identities, IDBindCallback callback);
 }

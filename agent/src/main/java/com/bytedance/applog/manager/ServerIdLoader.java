@@ -32,7 +32,9 @@ class ServerIdLoader extends BaseLoader {
     protected boolean doLoad(final JSONObject info) throws JSONException {
         final SharedPreferences sp = mConfig.getStatSp();
 
-        String deviceId = null;
+        String did = sp.getString(Api.KEY_DEVICE_ID, null);
+        DeviceManager.putString(info, Api.KEY_DEVICE_ID, did);
+
         String bdDid = sp.getString(Api.KEY_BD_DID, null);
         DeviceManager.putString(info, Api.KEY_BD_DID, bdDid);
 
@@ -43,9 +45,7 @@ class ServerIdLoader extends BaseLoader {
         DeviceManager.putString(info, Api.KEY_SSID, ssid);
 
         long registerTime = sp.getLong(Api.KEY_REGISTER_TIME, 0L);
-        if (!Utils.checkId(installId)
-                || (!Utils.checkId(deviceId) && !Utils.checkId(bdDid))
-                || !Utils.checkId(ssid)) {
+        if (!Utils.checkId(installId) || !(Utils.checkId(did) || Utils.checkId(bdDid)) || !Utils.checkId(ssid)) {
             if (registerTime != 0) {
                 registerTime = 0;
                 mConfig.updateRegisterTime(0L);
@@ -53,5 +53,10 @@ class ServerIdLoader extends BaseLoader {
         }
         info.put(Api.KEY_REGISTER_TIME, registerTime);
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "ServerId";
     }
 }

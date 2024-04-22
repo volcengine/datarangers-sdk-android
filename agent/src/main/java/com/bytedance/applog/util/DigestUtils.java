@@ -1,8 +1,10 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.util;
 
+import com.bytedance.applog.log.LoggerImpl;
+
 import java.security.MessageDigest;
-import java.util.Objects;
+import java.util.Collections;
 
 /**
  * 从AppLogToB抄的。
@@ -18,8 +20,8 @@ public class DigestUtils {
 
     /** get hex string of specified bytes */
     public static String toHexString(byte[] bytes) {
-        if (bytes == null) {
-            Assert.e("bytes is null");
+        if (null == bytes) {
+            LoggerImpl.global().warn(Collections.singletonList("DigestUtils"), "bytes is null");
             return null;
         }
         return toHexString(bytes, 0, bytes.length);
@@ -27,10 +29,10 @@ public class DigestUtils {
 
     /** get hex string of specified bytes */
     public static String toHexString(byte[] bytes, int off, int len) {
-        if (Assert.t(null != bytes, "bytes is null")) {
+        if (null == bytes) {
             return null;
         }
-        if (off < 0 || (off + len) > Objects.requireNonNull(bytes).length) {
+        if (off < 0 || (off + len) > bytes.length) {
             throw new IndexOutOfBoundsException();
         }
         char[] buff = new char[len * 2];

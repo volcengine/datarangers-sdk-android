@@ -4,11 +4,13 @@ package com.bytedance.applog.engine;
 import androidx.annotation.NonNull;
 
 import com.bytedance.applog.Level;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.manager.DeviceManager;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.RequestIdGenerator;
-import com.bytedance.applog.util.TLog;
 import com.bytedance.applog.util.Utils;
 
 import org.json.JSONException;
@@ -30,54 +32,50 @@ class Register extends BaseWorker {
 
     static final int REFRESH_BG = 12 * 60 * 60 * 1000;
 
-    /**
-     * 要注册的uuid
-     */
-    private String toRegisterUuid = null;
-
     static final long[] RETRY_DIFF =
-            new long[]{
-                    60 * 1000,
-                    60 * 1000,
-                    60 * 1000,
-                    2 * 60 * 1000,
-                    2 * 60 * 1000,
-                    3 * 60 * 1000,
-                    3 * 60 * 1000,
-                    6 * 60 * 1000,
-                    6 * 60 * 1000,
-                    9 * 60 * 1000,
-                    9 * 60 * 1000
+            new long[] {
+                60 * 1000,
+                60 * 1000,
+                60 * 1000,
+                2 * 60 * 1000,
+                2 * 60 * 1000,
+                3 * 60 * 1000,
+                3 * 60 * 1000,
+                6 * 60 * 1000,
+                6 * 60 * 1000,
+                9 * 60 * 1000,
+                9 * 60 * 1000
             };
 
     static final long[] RETRY_SAME =
-            new long[]{
-                    3 * 60 * 1000,
-                    3 * 60 * 1000,
-                    6 * 60 * 1000,
-                    6 * 60 * 1000,
-                    9 * 60 * 1000,
-                    9 * 60 * 1000,
-                    12 * 60 * 1000,
-                    12 * 60 * 1000
+            new long[] {
+                3 * 60 * 1000,
+                3 * 60 * 1000,
+                6 * 60 * 1000,
+                6 * 60 * 1000,
+                9 * 60 * 1000,
+                9 * 60 * 1000,
+                12 * 60 * 1000,
+                12 * 60 * 1000
             };
 
     private static final long[] RETRY_EMPTY =
-            new long[]{
-                    10 * 1000,
-                    10 * 1000,
-                    20 * 1000,
-                    20 * 1000,
-                    60 * 1000,
-                    60 * 1000,
-                    2 * 60 * 1000,
-                    2 * 60 * 1000,
-                    3 * 60 * 1000,
-                    3 * 60 * 1000,
-                    6 * 60 * 1000,
-                    6 * 60 * 1000,
-                    9 * 60 * 1000,
-                    9 * 60 * 1000
+            new long[] {
+                2 * 1000,
+                10 * 1000,
+                10 * 1000,
+                20 * 1000,
+                20 * 1000,
+                60 * 1000,
+                60 * 1000,
+                2 * 60 * 1000,
+                2 * 60 * 1000,
+                3 * 60 * 1000,
+                3 * 60 * 1000,
+                6 * 60 * 1000,
+                6 * 60 * 1000,
+                9 * 60 * 1000,
+                9 * 60 * 1000
             };
 
     Register(final Engine engine) {
@@ -108,7 +106,9 @@ class Register extends BaseWorker {
                 retry = RETRY_DIFF;
                 break;
             default:
-                TLog.ysnp(null);
+                mEngine.getAppLog()
+                        .getLogger()
+                        .error(LogInfo.Category.DEVICE_REGISTER, "Unknown register state");
                 retry = RETRY_SAME;
         }
         return retry;
@@ -121,14 +121,14 @@ class Register extends BaseWorker {
         return doRegister(newHeader);
     }
 
-    public boolean doRegister(@NonNull JSONObject header) throws JSONException {
-        TLog.d(getName() + " start work");
+    public synchronized boolean doRegister(@NonNull JSONObject header) throws JSONException {
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.DEVICE_REGISTER, "Start do register work");
 
         // 注册的新的uuid
         final String newUuid = header.optString(Api.KEY_USER_UNIQUE_ID);
-
-        // 记录正在注册的uuid
-        toRegisterUuid = newUuid;
+        final String newUuidType = header.optString(Api.KEY_USER_UNIQUE_ID_TYPE);
 
         final DeviceManager device = mEngine.getDm();
         final ConfigManager config = mEngine.getConfig();
@@ -147,9 +147,9 @@ class Register extends BaseWorker {
         }
         JSONObject response = invokeRegister(header);
         if (response != null) {
-            String deviceId = response.optString(Api.KEY_DEVICE_ID, "");
-            String installId = response.optString(Api.KEY_INSTALL_ID, "");
-            String ssid = response.optString(Api.KEY_SSID, "");
+            final String deviceId = response.optString(Api.KEY_DEVICE_ID, "");
+            final String installId = response.optString(Api.KEY_INSTALL_ID, "");
+            final String ssid = response.optString(Api.KEY_SSID, "");
             String bdDid = response.optString(Api.KEY_BD_DID, "");
             String cd = response.optString(Api.KEY_CD, "");
 
@@ -158,17 +158,39 @@ class Register extends BaseWorker {
                 mEngine.getDbStoreV2().updateSsid2Uuid(newUuid, ssid);
             }
 
-            boolean save = device.saveRegisterInfo(response, deviceId, installId, ssid, bdDid, cd);
+            boolean save =
+                    device.saveRegisterInfo(
+                            response, newUuid, deviceId, installId, ssid, bdDid, cd);
             if (save) {
                 mEngine.workAbConfiger();
-            }
 
+                // 发送数据到devtools
+                final String finalBdDid = bdDid;
+                LogUtils.sendJsonFetcher(
+                        "device_register_end",
+                        new EventBus.DataFetcher() {
+                            @Override
+                            public Object fetch() {
+                                JSONObject data = new JSONObject();
+                                try {
+                                    data.put("appId", appLogInstance.getAppId());
+                                    data.put("did", deviceId);
+                                    data.put("installId", installId);
+                                    data.put("ssid", ssid);
+                                    data.put("bdDid", finalBdDid);
+                                    data.put("uuid", newUuid);
+                                    data.put("uuidType", newUuidType);
+                                } catch (Throwable ignored) {
+                                }
+                                return data;
+                            }
+                        });
+            }
             return save;
-        } else {
-            // fallback
-            toRegisterUuid = appLogInstance.getUserUniqueID();
         }
-        TLog.d(getName() + " work finished");
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.DEVICE_REGISTER, "Register finished");
         return false;
     }
 
@@ -179,12 +201,11 @@ class Register extends BaseWorker {
      * @return JSONObject
      */
     public JSONObject invokeRegister(@NonNull JSONObject header) {
-        TLog.d("Start to invokeRegister");
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(LogInfo.Category.DEVICE_REGISTER, "Start to invokeRegister");
         try {
-            JSONObject request = new JSONObject();
-            request.put(Api.KEY_HEADER, header);
-            request.put(Api.KEY_MAGIC, Api.MSG_MAGIC);
-            request.put("_gen_time", System.currentTimeMillis());
+            JSONObject request = Api.buildRequestBody(header);
             String url =
                     appLogInstance
                             .getApiParamsUtil()
@@ -195,21 +216,12 @@ class Register extends BaseWorker {
                                     Level.L1);
             return appLogInstance.getApi().register(url, request);
         } catch (Throwable e) {
-            TLog.ysnp(e);
-        }
-        return null;
-    }
-
-    public JSONObject invokeReportOaid(@NonNull JSONObject header) {
-        try {
-            JSONObject request = new JSONObject();
-            request.put(Api.KEY_HEADER, header);
-            request.put(Api.KEY_MAGIC, Api.MSG_MAGIC);
-            request.put("_gen_time", System.currentTimeMillis());
-            String url = mEngine.getUriConfig().getReportOaidUri();
-            return appLogInstance.getApi().reportOaid(url, request);
-        } catch (Throwable e) {
-            TLog.ysnp(e);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(
+                            LogInfo.Category.DEVICE_REGISTER,
+                            "Request to register server failed.",
+                            e);
         }
         return null;
     }
@@ -217,14 +229,5 @@ class Register extends BaseWorker {
     @Override
     protected String getName() {
         return "register";
-    }
-
-    /**
-     * 读取正在注册的uuid
-     *
-     * @return pendingSsidUuid
-     */
-    public String getToRegisterUuid() {
-        return toRegisterUuid;
     }
 }

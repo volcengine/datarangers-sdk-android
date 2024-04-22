@@ -15,6 +15,7 @@ import android.webkit.WebView;
 import android.widget.AbsSeekBar;
 import android.widget.AdapterView;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.RatingBar;
@@ -22,12 +23,17 @@ import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
+
 import com.bytedance.applog.R;
+import com.bytedance.applog.log.LoggerImpl;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -56,7 +62,7 @@ public class ViewUtils {
         return name;
     }
 
-    static ArrayList<String> getViewContent(View view) {
+    static ArrayList<String> getViewContent(View view, String bannerText) {
         ArrayList<String> result = null;
         String value = null;
         Object contentTag = view.getTag(ViewHelper.TAG_CONTENT);
@@ -67,7 +73,7 @@ public class ViewUtils {
             final int count = vg.getChildCount();
             result = new ArrayList<>(count);
             for (int i = 0; i < count && vg.getChildAt(i).getVisibility() == View.VISIBLE; ++i) {
-                result.addAll(getViewContent(vg.getChildAt(i)));
+                result.addAll(getViewContent(vg.getChildAt(i), null));
             }
         } else {
             if (view instanceof EditText) {
@@ -105,6 +111,10 @@ public class ViewUtils {
                     if (((TextView) view).getText() != null) {
                         value = ((TextView) view).getText().toString();
                     }
+                } else if (view instanceof ImageView) {
+                    if (!TextUtils.isEmpty(bannerText)) {
+                        value = bannerText;
+                    }
                 } else {
                     String url;
                     if (view instanceof WebView && !isDestroyed((WebView) view)) {
@@ -120,8 +130,6 @@ public class ViewUtils {
                                 value = url;
                             }
                         } catch (Throwable e) {
-                            TLog.ysnp(e);
-
                         }
                     }
                 }
@@ -129,7 +137,9 @@ public class ViewUtils {
         }
         if (result == null) {
             if (TextUtils.isEmpty(value)) {
-                if (view.getContentDescription() != null) {
+                if (bannerText != null) {
+                    value = bannerText;
+                } else if (view.getContentDescription() != null) {
                     value = view.getContentDescription().toString();
                 }
                 value = truncateContent(value);
@@ -158,10 +168,10 @@ public class ViewUtils {
 
     static boolean isListView(View view) {
         return view instanceof AdapterView
-                || ClassHelper.isAndroidXRecyclerView(view)
-                || ClassHelper.isAndroidXViewPager(view)
-                || ClassHelper.isSupportRecyclerView(view)
-                || ClassHelper.isSupportViewPager(view);
+                || ClassHelper.instanceOfAndroidXRecyclerView(view)
+                || ClassHelper.instanceOfAndroidXViewPager(view)
+                || ClassHelper.instanceOfSupportRecyclerView(view)
+                || ClassHelper.instanceOfSupportViewPager(view);
     }
 
     static String getIdName(View view, boolean fromTagOnly) {
@@ -199,6 +209,10 @@ public class ViewUtils {
         }
     }
 
+    static int calcBannerItemPosition(@NonNull List bannerContent, int position) {
+        return position % bannerContent.size();
+    }
+
     public static boolean isIgnoredView(View view) {
         return view == null || view.getTag(R.id.applog_tag_ignore) != null;
     }
@@ -231,7 +245,8 @@ public class ViewUtils {
             mText.setAccessible(true);
             return (CharSequence) mText.get(textView);
         } catch (Throwable var2) {
-            TLog.ysnp(var2);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("ViewUtils"), "getEditTextText failed", var2);
             return null;
         }
     }
@@ -257,7 +272,7 @@ public class ViewUtils {
 
     public static boolean isMainDisplay(Context context, int displayId) {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
                 DisplayManager displayManager =
                         (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
                 Display display = displayManager.getDisplays()[0];
@@ -290,7 +305,11 @@ public class ViewUtils {
                 return (Boolean) isDestroy;
             }
         } catch (Exception var7) {
-            TLog.e("isDestroyed(): ", var7);
+            LoggerImpl.global()
+                    .error(
+                            Collections.singletonList("ViewUtils"),
+                            "Check isDestroyed failed",
+                            var7);
         }
 
         return false;

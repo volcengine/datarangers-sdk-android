@@ -3,6 +3,8 @@ package com.bytedance.applog;
 
 import android.text.TextUtils;
 
+import com.bytedance.applog.concurrent.TTExecutors;
+import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.store.BaseData;
 
 import java.util.ArrayList;
@@ -222,6 +224,26 @@ public final class AppLogHelper {
         return isGlobalInstance(instance)
                 ? defaultSpName
                 : defaultSpName + "_" + instance.getAppId();
+    }
+
+    /**
+     * 执行进入后台立即上报
+     */
+    public static void flushIfBackgroundSendEnabled() {
+        AppLogHelper.handleAll(new AppLogInstanceHandler() {
+            @Override
+            public void handle(final AppLogInstance instance) {
+                TTExecutors.getNormalExecutor().execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        ConfigManager config = instance.getConfig();
+                        if (config != null && !config.isEnterBackgroundSendDisabled()) {
+                            instance.flush();
+                        }
+                    }
+                });
+            }
+        });
     }
 
     public interface AppLogInstanceMatcher {

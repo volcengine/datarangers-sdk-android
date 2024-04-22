@@ -6,18 +6,23 @@ import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Message
-import android.text.TextUtils
 import androidx.annotation.WorkerThread
 import com.bytedance.applog.AppLogHelper
 import com.bytedance.applog.IDataObserver
 import com.bytedance.applog.alink.ALinkCache.Companion.NO_EXPIRE
-import com.bytedance.applog.alink.model.*
+import com.bytedance.applog.alink.model.ALinkData
+import com.bytedance.applog.alink.model.ALinkQueryParam
+import com.bytedance.applog.alink.model.ApiResponse
+import com.bytedance.applog.alink.model.AttributionData
+import com.bytedance.applog.alink.model.AttributionRequest
+import com.bytedance.applog.alink.model.BaseData
 import com.bytedance.applog.alink.network.ApiService
 import com.bytedance.applog.alink.util.LinkUtils
 import com.bytedance.applog.engine.Engine
+import com.bytedance.applog.log.LogInfo
 import com.bytedance.applog.manager.DeviceManager
 import com.bytedance.applog.server.Api
-import com.bytedance.applog.util.TLog
+import com.bytedance.applog.store.EventV3
 import org.json.JSONObject
 
 private const val MSG_START_DDL = 0
@@ -42,7 +47,11 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
     }
 
     private var mClipboardEnable = false
-    private var mHandler: Handler? = null
+    private val mHandler: Handler by lazy {
+        val handlerThread = HandlerThread("bd_tracker_alink")
+        handlerThread.start()
+        Handler(handlerThread.looper, this)
+    }
     private var mEngine: Engine = engine
     private var cache: ALinkCache
     private var mDeepLinkRetryCount: Int = 0
@@ -70,22 +79,12 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
     )
 
     init {
-        val handlerThread = HandlerThread("bd_tracker_alink")
-        handlerThread.start()
-        mHandler = Handler(handlerThread.looper, this)
         val spName = AppLogHelper.getInstanceSpName(engine.appLog, ALinkCache.SP_NAME)
         cache = ALinkCache(
             engine.context as Application,
             spName
         )
         apiService = ApiService(engine.appLog)
-    }
-
-    private fun checkAppUpdate(): Boolean {
-        return mEngine.run {
-            dm?.lastVersionCode != dm?.versionCode
-                    || !TextUtils.equals(config?.lastChannel, config?.channel)
-        }
     }
 
     /**
@@ -100,15 +99,11 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
             request.installId = iid
             request.androidId = openUdid
             request.imei = udid
-            val oaidJson = getHeaderValue("oaid", null, JSONObject::class.java)
             request.bdDid = bdDid
-            request.oaid = oaidJson?.optString("id")
             request.googleAid = getHeaderValue(Api.KEY_GOOGLE_AID, null, String::class.java)
-//            request.ip = LinkUtils.getIpAddressString()
             request.ua = getHeaderValue(Api.KEY_USER_AGENT, null, String::class.java)
             request.deviceModel = getHeaderValue(Api.KEY_DEVICE_MODEL, null, String::class.java)
             request.osVersion = getHeaderValue(Api.KEY_OS_VERSION, null, String::class.java)
-            //必须
             request.isNewUser = isNewUser
             request.existAppCache = exitsAppCache
             request.appVersion = versionName
@@ -129,8 +124,6 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
             imei = mEngine.dm?.udid
             deviceModel = mEngine.dm?.getHeaderValue(Api.KEY_DEVICE_MODEL, null, String::class.java)
             osVersion = mEngine.dm?.getHeaderValue(Api.KEY_OS_VERSION, null, String::class.java)
-            val oaidJson = mEngine.dm?.getHeaderValue("oaid", null, JSONObject::class.java)
-            oaid = oaidJson?.optString("id")
             googleAid = mEngine.dm?.getHeaderValue(Api.KEY_GOOGLE_AID, null, String::class.java)
         }
     }
@@ -141,7 +134,6 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
         val linkData =
             cache.getData(DEEP_LINK_CACHE, ALinkData::class.java)
                 ?.toJson()
-        TLog.d("link data = $linkData")
         linkData?.run {
             for (key in UTM_ATTRS) {
                 utmAttrs.put(key, optString(key, null))
@@ -169,17 +161,17 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
         mClipboardEnable = clipboardEnable
     }
 
-    /**
-     * 当DeepLink激活时调用
-     * Main/WorkerThread
-     */
     fun onDeepLinked(uri: Uri?) {
         mergeTracerData()
         uri?.run {
             deepLinkUrl = toString()
         }
-        TLog.d("Activate deep link with url: {}...", deepLinkUrl)
-        mHandler?.run {
+        logger().debug(
+            LogInfo.Category.ALINK,
+            "Activate deep link with url: {}...",
+            deepLinkUrl
+        )
+        mHandler.run {
             val params: JSONObject? = LinkUtils.getParamFromLink(uri)
             val queryParam = BaseData.fromJson(params, ALinkQueryParam::class.java)
             if (!queryParam?.token.isNullOrEmpty()) {
@@ -208,7 +200,7 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
             JSONObject().run {
                 put("\$link_type", "direct")
                 put("\$deeplink_url", deepLinkUrl)
-                mEngine.appLog.onEventV3("\$invoke", this)
+                mEngine.appLog.receive(EventV3("\$invoke", this))
             }
             mergeTracerData()
             mEngine.appLog.aLinkListener?.onALinkData(toMap(), null)
@@ -218,14 +210,14 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
     /**
      * 延迟深度链接: 第一次设备注册成功后回调
      */
-    fun doDeferDeepLink(queryParam: ALinkQueryParam, exitsAppCache: Boolean) {
+    private fun doDeferDeepLink(queryParam: ALinkQueryParam, exitsAppCache: Boolean) {
         with(queryParam) {
             aid = mEngine.appLog.appId
             bdDid = mEngine.appLog.did
             ssid = mEngine.appLog.ssid
             userUniqueId = mEngine.appLog.userUniqueID
             if (!abVersion.isNullOrEmpty()) {
-                mEngine.appLog.setExternalAbVersion(abVersion)
+                mEngine.appLog.setExternalAbVersion(abVersion ?: "")
             }
             if (!webSsid.isNullOrEmpty()) {
                 cache.putString(
@@ -242,21 +234,42 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
                 queryParam
             )
         }
-        response?.data?.run {
-            if (isFirstLaunch) {
-                isFirstLaunch = false
-                cache.putData(DEFERRED_LINK_CACHE, this, NO_EXPIRE)
-                JSONObject().run {
-                    put("\$link_type", "deferred")
-                    mEngine.appLog.onEventV3("\$invoke", this)
+        when (val attributionData = response?.data) {
+            null -> {
+                fun deal(message: String?): String {
+                    return when (message) {
+                        null -> "DDL failed"
+                        "success" -> "DDL response data empty"
+                        else -> message
+                    }
                 }
-                mEngine.appLog.aLinkListener?.onAttributionData(toMap(), null)
+                mEngine.appLog.aLinkListener?.onAttributionFailedCallback(
+                    IllegalStateException(deal(response?.message))
+                )
+            }
+
+            else -> {
+                attributionData.run {
+                    if (isFirstLaunch) {
+                        isFirstLaunch = false
+                        cache.putData(DEFERRED_LINK_CACHE, this, NO_EXPIRE)
+                        JSONObject().run {
+                            put("\$link_type", "deferred")
+                            mEngine.appLog.receive(EventV3("\$invoke", this))
+                        }
+                        mEngine.appLog.aLinkListener?.onAttributionData(toMap(), null)
+                    } else {
+                        mEngine.appLog.aLinkListener?.onAttributionFailedCallback(
+                            IllegalStateException("DDL has data but not firstLaunch")
+                        )
+                    }
+                }
             }
         }
     }
 
-    override fun handleMessage(msg: Message?): Boolean {
-        when (msg?.what) {
+    override fun handleMessage(msg: Message): Boolean {
+        when (msg.what) {
             MSG_START_DL -> {
                 if (mEngine.dm?.registerState != DeviceManager.STATE_EMPTY) {
                     val params = msg.obj as ALinkQueryParam
@@ -265,24 +278,34 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
                 }
                 if (mDeepLinkRetryCount < maxDeepLinkRetryCount) {
                     mDeepLinkRetryCount++
-                    TLog.d("Retry do deep link delay for the {} times...", mDeepLinkRetryCount)
-                    mHandler?.run {
+                    logger().debug(
+                        LogInfo.Category.ALINK,
+                        "Retry do deep link delay for the {} times...",
+                        mDeepLinkRetryCount
+                    )
+                    mHandler.run {
                         sendMessageDelayed(obtainMessage(msg.what, msg.obj), 500)
                     }
                 } else {
-                    TLog.w("Retried max times to do deep link until AppLog ready.")
+                    logger().warn(
+                        LogInfo.Category.ALINK,
+                        "Retried max times to do deep link until AppLog ready"
+                    )
                 }
             }
+
             MSG_START_DDL -> {
                 val clipData =
-                    if (mClipboardEnable)
-                        LinkUtils.getParamFromClipboard(mEngine.context) else JSONObject()
-                TLog.d("Start to do defer deeplink with data:{}...", clipData)
-                clipData?.let {
-                    val queryParam = BaseData.fromJson(it, ALinkQueryParam::class.java)
-                    queryParam?.run {
-                        doDeferDeepLink(this, msg.obj as Boolean)
-                    }
+                    if (mClipboardEnable) LinkUtils.getParamFromClipboard(mEngine.context)
+                    else JSONObject()
+                logger().debug(
+                    LogInfo.Category.ALINK,
+                    "Start to do defer deeplink with data:{}...", clipData
+                )
+                val queryParam =
+                    BaseData.fromJson(clipData ?: JSONObject(), ALinkQueryParam::class.java)
+                queryParam?.run {
+                    doDeferDeepLink(this, msg.obj as Boolean)
                 }
             }
         }
@@ -290,24 +313,23 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
     }
 
     fun destroy() {
-        mHandler?.run {
+        mHandler.run {
             removeCallbacksAndMessages(null)
             looper.quit()
         }
     }
 
-
-    override fun onIdLoaded(did: String?, iid: String?, ssid: String?) {
+    override fun onIdLoaded(did: String, iid: String, ssid: String) {
     }
 
     override fun onRemoteIdGet(
         changed: Boolean,
         oldDid: String?,
-        newDid: String?,
-        oldIid: String?,
-        newIid: String?,
-        oldSsid: String?,
-        newSsid: String?
+        newDid: String,
+        oldIid: String,
+        newIid: String,
+        oldSsid: String,
+        newSsid: String
     ) {
         // 设备注册成功后回调延迟深度链接
         mergeTracerData()
@@ -318,9 +340,8 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
         if (!appCacheExists) {
             cache.putString(APP_CACHE, APP_CACHE, NO_EXPIRE)
         }
-
-        if (!appCacheExists || checkAppUpdate()) {
-            mHandler?.run {
+        if (!appCacheExists || mEngine.isVersionCodeOrChannelUpdate) {
+            mHandler.run {
                 sendMessage(obtainMessage(MSG_START_DDL, appCacheExists))
             }
         }
@@ -332,9 +353,11 @@ class ALinkManager(engine: Engine) : Handler.Callback, IDataObserver {
     override fun onRemoteConfigGet(changed: Boolean, config: JSONObject?) {
     }
 
-    override fun onRemoteAbConfigGet(changed: Boolean, abConfig: JSONObject?) {
+    override fun onRemoteAbConfigGet(changed: Boolean, abConfig: JSONObject) {
     }
 
-    override fun onAbVidsChange(vids: String?, extVids: String?) {
+    override fun onAbVidsChange(vids: String, extVids: String) {
     }
+
+    private fun logger() = mEngine.appLog.logger
 }

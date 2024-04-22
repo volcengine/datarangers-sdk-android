@@ -3,4 +3,5 @@
     <item name="applog_tag_view_id" type="id" />
     <item name="applog_tag_ignore" type="id" />
     <item name="applog_tag_view_name" type="id" />
+    <item name="applog_tag_view_exposure_observe_flag" type="id" />
 </resources>

@@ -8,8 +8,6 @@ public class UriConfig {
 
     public static final String PATH_REGISTER = "/service/2/device_register/";
 
-    public static final String PATH_DEVICE_UPDATE = "/service/2/device_update";
-
     public static final String PATH_SEND = "/service/2/app_log/";
 
     public static final String PATH_CONFIG = "/service/2/log_settings/";
@@ -22,12 +20,12 @@ public class UriConfig {
 
     public static final String PATH_ALINK_ATTRIBUTION = "/service/2/attribution_data";
 
+    public static final String PATH_ID_BIND = "/service/2/id_bind";
+
     /**
      * uri for register service mandatory
      */
     private String mRegisterUri;
-
-    private String mReportOaidUri;
 
     /**
      * uri for send service mandatory
@@ -58,9 +56,13 @@ public class UriConfig {
 
     private String mAlinkAttributionUri;
 
+    /**
+     * uri for OneID service
+     */
+    private String mIDBindUri;
+
     private UriConfig(Builder builder) {
         this.mRegisterUri = builder.mRegisterUri;
-        this.mReportOaidUri = builder.mReportOaidUri;
         this.mSendUris = builder.mSendUris;
         this.mSettingUri = builder.mSettingUri;
         this.mAbUri = builder.mAbUri;
@@ -68,12 +70,11 @@ public class UriConfig {
         this.mBusinessUri = builder.mBusinessUri;
         this.mAlinkQueryUri = builder.mAlinkQueryUri;
         this.mAlinkAttributionUri = builder.mAlinkAttributionUri;
+        this.mIDBindUri = builder.mIDBindUri;
     }
 
     public static class Builder {
         private String mRegisterUri;
-        private String mReportOaidUri;
-        private String mActiveUri;
         private String[] mSendUris;
         private String mSettingUri;
         private String mAbUri;
@@ -81,19 +82,10 @@ public class UriConfig {
         private String mBusinessUri;
         private String mAlinkQueryUri;
         private String mAlinkAttributionUri;
+        private String mIDBindUri;
 
         public Builder setRegisterUri(final String uri) {
             this.mRegisterUri = uri;
-            return this;
-        }
-
-        public Builder setReportOaidUri(final String uri) {
-            this.mReportOaidUri = uri;
-            return this;
-        }
-
-        public Builder setActiveUri(final String uri) {
-            this.mActiveUri = uri;
             return this;
         }
 
@@ -132,6 +124,11 @@ public class UriConfig {
             return this;
         }
 
+        public Builder setIDBindUri(final String uri) {
+            this.mIDBindUri = uri;
+            return this;
+        }
+
         public UriConfig build() {
             return new UriConfig(this);
         }
@@ -139,10 +136,6 @@ public class UriConfig {
 
     public String getRegisterUri() {
         return mRegisterUri;
-    }
-
-    public String getReportOaidUri() {
-        return mReportOaidUri;
     }
 
     public String[] getSendUris() {
@@ -173,12 +166,12 @@ public class UriConfig {
         return mAlinkQueryUri;
     }
 
-    public void setRegisterUri(final String uri) {
-        mRegisterUri = uri;
+    public String getIDBindUri() {
+        return mIDBindUri;
     }
 
-    public void setReportOaidUri(final String uri) {
-        mReportOaidUri = uri;
+    public void setRegisterUri(final String uri) {
+        mRegisterUri = uri;
     }
 
     public void setSendUris(final String[] uris) {
@@ -219,7 +212,6 @@ public class UriConfig {
     public static UriConfig createByDomain(String domain, String[] extraSendDomain) {
         Builder builder = new Builder();
         builder.setRegisterUri(domain + PATH_REGISTER)
-                .setReportOaidUri(domain + PATH_DEVICE_UPDATE)
                 .setALinkAttributionUri(domain + PATH_ALINK_ATTRIBUTION)
                 .setALinkQueryUri(domain + PATH_ALINK_QUERY);
         if (extraSendDomain == null || extraSendDomain.length == 0) {
@@ -234,7 +226,8 @@ public class UriConfig {
         }
         builder.setSettingUri(domain + PATH_CONFIG)
                 .setAbUri(domain + PATH_AB)
-                .setProfileUri(domain + PATH_PROFILE);
+                .setProfileUri(domain + PATH_PROFILE)
+                .setIDBindUri(domain + PATH_ID_BIND);
         return builder.build();
     }
 }

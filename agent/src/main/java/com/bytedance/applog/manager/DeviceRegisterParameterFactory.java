@@ -3,9 +3,9 @@ package com.bytedance.applog.manager;
 
 import android.accounts.Account;
 import android.content.Context;
-import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.store.AccountCacheHelper;
 import com.bytedance.applog.util.DeviceParamsProvider;
 import com.bytedance.applog.util.IDeviceRegisterParameter;
@@ -20,11 +20,12 @@ public class DeviceRegisterParameterFactory {
     private Account sDeviceAccount;
 
     private AccountCacheHelper mAccountCache;
-    @Nullable private ConfigManager config;
+    private ConfigManager config;
 
     public DeviceRegisterParameterFactory() {}
 
-    public IDeviceRegisterParameter getProvider(Context context, ConfigManager config)
+    public IDeviceRegisterParameter getProvider(
+            AppLogInstance appLogInstance, Context context, ConfigManager config)
             throws IllegalArgumentException {
         if (sDeviceRegisterParameterProvider == null) {
             synchronized (DeviceRegisterParameterFactory.class) {
@@ -34,11 +35,12 @@ public class DeviceRegisterParameterFactory {
                     }
                     this.config = config;
                     if (mAccountCache == null) {
-                        mAccountCache = new AccountCacheHelper(context);
+                        mAccountCache = new AccountCacheHelper(appLogInstance, context);
                     }
                     if (sDeviceRegisterParameterProvider == null) {
                         sDeviceRegisterParameterProvider =
-                                new DeviceParamsProvider(context, config, mAccountCache);
+                                new DeviceParamsProvider(
+                                        appLogInstance, context, config, mAccountCache);
                         if (sDeviceAccount != null) {
                             ((DeviceParamsProvider) sDeviceRegisterParameterProvider)
                                     .setAccount(sDeviceAccount);

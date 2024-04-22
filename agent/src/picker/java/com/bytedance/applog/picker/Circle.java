@@ -2,7 +2,6 @@
 package com.bytedance.applog.picker;
 
 import com.bytedance.applog.store.Click;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -54,7 +53,7 @@ public class Circle extends Click {
             object.put("height", height);
             return object;
         } catch (JSONException e) {
-            TLog.e(e);
+            getLogger().error(loggerTags, "JSON handle failed", e);
         }
         return null;
     }

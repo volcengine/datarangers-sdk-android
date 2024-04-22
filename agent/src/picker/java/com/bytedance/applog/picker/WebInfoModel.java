@@ -1,7 +1,7 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.picker;
 
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -287,7 +287,7 @@ public class WebInfoModel {
                 object.put("height", height);
                 return object;
             } catch (JSONException e) {
-                TLog.e(e);
+                LoggerImpl.global().error("FrameModel to json failed", e);
             }
             return null;
         }

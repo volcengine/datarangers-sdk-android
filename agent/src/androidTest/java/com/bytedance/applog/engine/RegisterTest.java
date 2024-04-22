@@ -1,7 +1,7 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.engine;
 
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.BaseAppLogTest;

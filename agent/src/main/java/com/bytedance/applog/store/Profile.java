@@ -7,9 +7,9 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.NetworkUtils;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -64,7 +64,7 @@ public class Profile extends BaseData {
             try {
                 fillParam();
             } catch (JSONException e) {
-                TLog.ysnp(e);
+                getLogger().error(LogInfo.Category.EVENT, loggerTags, "Fill params failed", e);
             }
         }
         cv.put(COL_PARAM, param);
@@ -90,7 +90,9 @@ public class Profile extends BaseData {
             obj.put(COL_UID, uid);
         }
         obj.put(COL_UUID, TextUtils.isEmpty(uuid) ? JSONObject.NULL : uuid);
-
+        if (!TextUtils.isEmpty(uuidType)) {
+            obj.put(Api.KEY_USER_UNIQUE_ID_TYPE_NEW, uuidType);
+        }
         if (!TextUtils.isEmpty(ssid)) {
             obj.put(COL_SSID, ssid);
         }

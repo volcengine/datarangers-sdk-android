@@ -3,11 +3,9 @@ package com.bytedance.applog.store;
 
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.support.annotation.Nullable;
 
 import com.bytedance.applog.engine.Engine;
-import com.bytedance.applog.monitor.model.ExceptionTrace;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.util.Utils;
 
 import java.util.HashMap;
@@ -17,9 +15,9 @@ class DbOpenHelper extends SQLiteOpenHelper {
     private final Engine mEngine;
 
     DbOpenHelper(
-            @Nullable final Engine mEngine,
-            @Nullable final String name,
-            @Nullable final SQLiteDatabase.CursorFactory factory,
+            final Engine mEngine,
+            final String name,
+            final SQLiteDatabase.CursorFactory factory,
             final int version) {
         super(mEngine.getContext(), name, factory, version);
         this.mEngine = mEngine;
@@ -38,7 +36,9 @@ class DbOpenHelper extends SQLiteOpenHelper {
             }
             db.setTransactionSuccessful();
         } catch (Throwable t) {
-            TLog.ysnp(t);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "Create table failed", t);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -46,7 +46,13 @@ class DbOpenHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(final SQLiteDatabase db, final int oldVersion, final int newVersion) {
-        TLog.i("onUpgrade" + ", " + oldVersion + ", " + newVersion);
+        mEngine.getAppLog()
+                .getLogger()
+                .debug(
+                        LogInfo.Category.DATABASE,
+                        "Database upgrade from:{} to:{}",
+                        oldVersion,
+                        newVersion);
         try {
             db.beginTransaction();
             final HashMap<String, BaseData> ZYGOTES = BaseData.getAllBaseDataObj();
@@ -55,7 +61,9 @@ class DbOpenHelper extends SQLiteOpenHelper {
             }
             db.setTransactionSuccessful();
         } catch (Throwable t) {
-            TLog.e("drop tables failed when upgrade.", t);
+            mEngine.getAppLog()
+                    .getLogger()
+                    .error(LogInfo.Category.DATABASE, "drop tables failed when upgrade.", t);
         } finally {
             Utils.endDbTransactionSafely(db);
         }
@@ -65,17 +73,5 @@ class DbOpenHelper extends SQLiteOpenHelper {
     @Override
     public void onDowngrade(final SQLiteDatabase db, final int oldVersion, final int newVersion) {
         onUpgrade(db, oldVersion, newVersion);
-    }
-
-    /**
-     * 监控DB错误
-     *
-     * @param e Throwable
-     */
-    public void traceDbError(Throwable e) {
-        if (null == mEngine.getMonitor()) {
-            return;
-        }
-        mEngine.getMonitor().trace(new ExceptionTrace("db_exception", e));
     }
 }

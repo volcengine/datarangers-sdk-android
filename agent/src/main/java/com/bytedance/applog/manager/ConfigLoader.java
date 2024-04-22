@@ -3,24 +3,28 @@ package com.bytedance.applog.manager;
 
 import android.content.Context;
 import android.text.TextUtils;
+
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.GaidGetter;
 import com.bytedance.applog.util.TLog;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
  * @author shiyanlong
  * @date 2019/2/2
- **/
+ */
 class ConfigLoader extends BaseLoader {
 
     private final Context mApp;
-
+    private final AppLogInstance appLogInstance;
     private final ConfigManager mConfig;
 
-    ConfigLoader(Context context, ConfigManager config) {
+    ConfigLoader(AppLogInstance appLogInstance, Context context, ConfigManager config) {
         super(false, false);
+        this.appLogInstance = appLogInstance;
         mApp = context;
         mConfig = config;
     }
@@ -36,12 +40,6 @@ class ConfigLoader extends BaseLoader {
         DeviceManager.putString(info, Api.KEY_RELEASE_BUILD, mConfig.getReleaseBuild());
         DeviceManager.putString(info, Api.KEY_USER_AGENT, mConfig.getUserAgent());
         DeviceManager.putString(info, Api.KEY_AB_SDK_VERSION, mConfig.getAbSdkVersion());
-
-        String gaid = mConfig.getGoogleAID();
-        if (TextUtils.isEmpty(gaid)) {
-            gaid = GaidGetter.getGaid(mApp, mConfig);
-        }
-        DeviceManager.putString(info, Api.KEY_GOOGLE_AID, gaid);
 
         String appLanguage = mConfig.getAppLanguageFromInitConfig();
         if (TextUtils.isEmpty(appLanguage)) {
@@ -59,7 +57,7 @@ class ConfigLoader extends BaseLoader {
             try {
                 info.put(Api.KEY_APP_TRACK, new JSONObject(appTrack));
             } catch (Throwable t) {
-                TLog.ysnp(t);
+                appLogInstance.getLogger().error("JSON handle appTrack failed", t);
             }
         }
 
@@ -70,13 +68,22 @@ class ConfigLoader extends BaseLoader {
                 custom.remove("_debug_flag");
                 info.put(Api.KEY_CUSTOM, custom);
             } catch (Throwable t) {
-                TLog.ysnp(t);
+                appLogInstance.getLogger().error("JSON handle failed", t);
             }
         }
         String uuid = mConfig.getUserUniqueId();
         if (!TextUtils.isEmpty(uuid)) {
             DeviceManager.putString(info, Api.KEY_USER_UNIQUE_ID, uuid);
         }
+        String uuidType = mConfig.getUserUniqueIdType();
+        if (!TextUtils.isEmpty(uuidType)) {
+            DeviceManager.putString(info, Api.KEY_USER_UNIQUE_ID_TYPE, uuidType);
+        }
         return true;
+    }
+
+    @Override
+    protected String getName() {
+        return "Config";
     }
 }

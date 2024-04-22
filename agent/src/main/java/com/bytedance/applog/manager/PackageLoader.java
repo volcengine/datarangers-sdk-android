@@ -5,8 +5,9 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.text.TextUtils;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.PackageUtils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -18,11 +19,12 @@ import org.json.JSONObject;
 class PackageLoader extends BaseLoader {
 
     private final Context mApp;
-
+    private final AppLogInstance appLogInstance;
     private final ConfigManager mConfig;
 
-    PackageLoader(Context ctx, ConfigManager configManager) {
+    PackageLoader(final AppLogInstance appLogInstance, Context ctx, ConfigManager configManager) {
         super(false, false);
+        this.appLogInstance = appLogInstance;
         mApp = ctx;
         mConfig = configManager;
     }
@@ -33,19 +35,17 @@ class PackageLoader extends BaseLoader {
         if (TextUtils.isEmpty(mConfig.getZiJiePkg())) {
             info.put(Api.KEY_PACKAGE, pkg);
         } else {
-            TLog.d("has zijie pkg");
+            appLogInstance.getLogger().debug("has zijie pkg");
             info.put(Api.KEY_PACKAGE, mConfig.getZiJiePkg());
             info.put(Api.KEY_REAL_PACKAGE_NAME, pkg);
         }
 
         try {
-            PackageInfo packageInfo = mApp.getPackageManager().getPackageInfo(pkg, 0);
-            int versionCode = packageInfo.versionCode;
-
+            int versionCode = PackageUtils.getVersionCode(mApp);
             if (!TextUtils.isEmpty(mConfig.getVersion())) {
                 info.put(Api.KEY_APP_VERSION, mConfig.getVersion());
             } else {
-                info.put(Api.KEY_APP_VERSION, packageInfo.versionName);
+                info.put(Api.KEY_APP_VERSION, PackageUtils.getVersionName(mApp));
             }
 
             if (!TextUtils.isEmpty(mConfig.getVersionMinor())) {
@@ -79,16 +79,26 @@ class PackageLoader extends BaseLoader {
                 info.put(Api.KEY_TWEAKED_CHANNEL, mConfig.getTweakedChannel());
             }
 
-            if (packageInfo.applicationInfo != null) {
+            PackageInfo packageInfo = PackageUtils.getPackageInfo(mApp, pkg);
+            if (null != packageInfo && packageInfo.applicationInfo != null) {
                 int resId = packageInfo.applicationInfo.labelRes;
                 if (resId > 0) {
-                    info.put(Api.KEY_DISPLAY_NAME, mApp.getString(resId));
+                    try {
+                        info.put(Api.KEY_DISPLAY_NAME, mApp.getString(resId));
+                    } catch (Throwable ignored) {
+
+                    }
                 }
             }
             return true;
         } catch (Throwable e) {
-            TLog.ysnp(e);
+            appLogInstance.getLogger().error("Load package info failed.", e);
             return false;
         }
+    }
+
+    @Override
+    protected String getName() {
+        return "Package";
     }
 }

@@ -5,13 +5,13 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.support.annotation.Nullable;
-import android.support.annotation.VisibleForTesting;
-import android.support.annotation.WorkerThread;
 
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
+import androidx.annotation.WorkerThread;
+
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.store.SharedPreferenceCacheHelper;
-import com.bytedance.applog.util.TLog;
 
 /**
  * 检测App是否是「一健迁移」到另一个手机上 <br>
@@ -21,7 +21,6 @@ public final class MigrateDetector {
     private static final int STATE_ENABLED = PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
     private static final int STATE_DEFAULT = PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
     private static final int STATE_FLAG = PackageManager.DONT_KILL_APP;
-
     public static final String SP_FILE = "bdtracker_dr_migrate_detector";
     @VisibleForTesting public static final String KEY_COMPONENT_STATE = "component_state";
 
@@ -30,22 +29,33 @@ public final class MigrateDetector {
     private final boolean migrate;
     private final SharedPreferences sp;
 
+    private static volatile MigrateDetector sInstance;
+
+    public static MigrateDetector getInstance(Context context){
+        if (sInstance == null){
+            synchronized (MigrateDetector.class){
+                if (sInstance == null){
+                    sInstance = new MigrateDetector(context);
+                }
+            }
+        }
+        return sInstance;
+    }
+
     @WorkerThread
-    public MigrateDetector(Context context, String spName) {
+    public MigrateDetector(Context context) {
         Context app = context.getApplicationContext();
-        sp =
-                SharedPreferenceCacheHelper.getSafeSharedPreferences(
-                        app, spName, Context.MODE_PRIVATE);
+        sp = context.getSharedPreferences(MigrateDetector.SP_FILE, Context.MODE_PRIVATE);
         pm = app.getPackageManager();
 
         // Component的配置是和应用相关的，除非卸载重装，否则一直都在
         component = new ComponentName(context, MigrateDetectorActivity.class);
         migrate = isMigrateInternal();
-        TLog.d("MigrateDetector#constructor migrate=" + migrate);
+        LoggerImpl.global().debug("MigrateDetector#constructor migrate=" + migrate);
     }
 
     public void disableComponent() {
-        TLog.d("MigrateDetector#disableComponent");
+        LoggerImpl.global().debug("MigrateDetector#disableComponent");
         pm.setComponentEnabledSetting(component, STATE_DISABLED, STATE_FLAG);
         sp.edit().putInt(KEY_COMPONENT_STATE, STATE_DISABLED).apply();
     }
@@ -66,11 +76,12 @@ public final class MigrateDetector {
             return false;
         }
         int ss = sp.getInt(KEY_COMPONENT_STATE, STATE_DEFAULT);
-        TLog.d(
-                "MigrateDetector#isMigrateInternal cs="
-                        + getComponentState(cs)
-                        + " ss="
-                        + getComponentState(ss));
+        LoggerImpl.global()
+                .debug(
+                        "MigrateDetector#isMigrateInternal cs="
+                                + getComponentState(cs)
+                                + " ss="
+                                + getComponentState(ss));
         if (cs == STATE_DEFAULT && ss == STATE_DISABLED) {
             return true;
         }

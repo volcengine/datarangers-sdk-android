@@ -6,9 +6,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
+import androidx.annotation.Keep
 import com.bytedance.applog.alink.ALinkManager
 import org.json.JSONObject
 
+@Keep
 object LinkUtils {
 
     /**
@@ -58,20 +60,4 @@ object LinkUtils {
         }
         return null
     }
-
-    /**
-     * 获取本机ip
-     */
-//    @MainThread
-//    fun getIpAddressString(): String? {
-//        return try {
-//            NetworkInterface.getNetworkInterfaces().asSequence().flatMap { networkInterfaces ->
-//                networkInterfaces.inetAddresses.asSequence()
-//            }.find { inetAddress ->
-//                inetAddress is Inet4Address && !inetAddress.isLoopbackAddress()
-//            }?.hostAddress
-//        } catch (t: Throwable) {
-//            null
-//        }
-//    }
 }

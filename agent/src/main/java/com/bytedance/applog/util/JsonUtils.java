@@ -3,10 +3,13 @@ package com.bytedance.applog.util;
 
 import androidx.annotation.Nullable;
 
+import com.bytedance.applog.log.LoggerImpl;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -168,7 +171,8 @@ public class JsonUtils {
                 to.put(key, from.opt(key));
             }
         } catch (JSONException e) {
-            TLog.e("Merge json interrupted.", e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("JsonUtils"), "Merge json interrupted.", e);
         }
         return to;
     }

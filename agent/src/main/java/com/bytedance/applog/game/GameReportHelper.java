@@ -3,11 +3,13 @@ package com.bytedance.applog.game;
 
 import com.bytedance.applog.AppLog;
 import com.bytedance.applog.AppLogInstance;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.util.Utils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import java.util.Collections;
 
 /**
  * @author linguoqing
@@ -41,7 +43,8 @@ public final class GameReportHelper {
             object.put("is_success", Utils.getYesNoString(isSuccess));
             AppLog.onEventV3(REGISTER, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -58,7 +61,8 @@ public final class GameReportHelper {
             object.put("is_success", Utils.getYesNoString(isSuccess));
             AppLog.onEventV3(LOG_IN, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -95,7 +99,8 @@ public final class GameReportHelper {
             object.put("currency_amount", currencyAmount);
             AppLog.onEventV3(PURCHASE, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -112,7 +117,8 @@ public final class GameReportHelper {
             object.put("is_success", Utils.getYesNoString(isSuccess));
             AppLog.onEventV3(ACCESS_ACCOUNT, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -143,7 +149,8 @@ public final class GameReportHelper {
             object.put("description", description);
             AppLog.onEventV3(QUEST, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -158,7 +165,8 @@ public final class GameReportHelper {
             object.put("level", level);
             AppLog.onEventV3(UPDATE_LEVEL, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -173,7 +181,8 @@ public final class GameReportHelper {
             object.put("gamerole_id", gameRoleId);
             AppLog.onEventV3(CREATE_GAMEROLE, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -213,7 +222,8 @@ public final class GameReportHelper {
             object.put("currency_amount", currencyAmount);
             AppLog.onEventV3(CHECK_OUT, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -241,7 +251,8 @@ public final class GameReportHelper {
             object.put("is_success", Utils.getYesNoString(isSuccess));
             AppLog.onEventV3(ADD_TO_FAVORITE, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -258,7 +269,8 @@ public final class GameReportHelper {
             object.put("is_success", Utils.getYesNoString(isSuccess));
             AppLog.onEventV3(ACCESS_PAYMENT_CHANNEL, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -286,7 +298,8 @@ public final class GameReportHelper {
             object.put("is_success", Utils.getYesNoString(isSuccess));
             AppLog.onEventV3(ADD_CART, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 
@@ -306,7 +319,8 @@ public final class GameReportHelper {
             object.put("content_id", contentId);
             AppLog.onEventV3(VIEW_CONTENT, object, AppLogInstance.BUSINESS_EVENT);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("GameReportHelper"), "JSON handle failed", e);
         }
     }
 }

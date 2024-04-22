@@ -14,22 +14,27 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.bytedance.applog.AppLogHelper;
-import com.bytedance.applog.IAppLogInstance;
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.InitConfig;
+import com.bytedance.applog.engine.Engine;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.store.BaseData;
 import com.bytedance.applog.store.EventV3;
 import com.bytedance.applog.store.SharedPreferenceCacheHelper;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.JsonUtils;
 import com.bytedance.applog.util.Utils;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * @author shiyanlong 2019/1/20
@@ -59,7 +64,11 @@ public class ConfigManager {
 
     private static final String SP_KEY_EVENT_INTERVAL = "batch_event_interval";
 
+    private static final String SP_KEY_EVENT_SIZE = "batch_event_size";
+
     private static final String SP_KEY_LAUNCH_TIMELY = "send_launch_timely";
+
+    private static final String SP_KEY_ENTER_BACKGROUND_NOT_SEND = "enter_background_not_send";
 
     private static final String KEY_CONFIG_TS = "app_log_last_config_time";
 
@@ -70,6 +79,8 @@ public class ConfigManager {
     private static final String KEY_BAV_AB_ENABLE = "bav_ab_config";
 
     private static final String KEY_REAL_TIME_EVENTS = "real_time_events";
+
+    private static final String KEY_SENSITIVE_FIELDS = "sensitive_fields";
 
     private static final String SP_CUSTOM_HEADER = "header_custom";
 
@@ -100,6 +111,10 @@ public class ConfigManager {
 
     private static final long MAX_EVENT_INTERVAL = 5 * 60 * 1000L;
 
+    private static final long MIN_EVENT_SIZE = 50;
+
+    private static final long MAX_EVENT_SIZE = 9999;
+
     private static final String KEY_BACK_OFF_RATIO = "backoff_ratio";
 
     private static final String KEY_MAX_REQUEST_FREQUENCY = "max_request_frequency";
@@ -110,11 +125,9 @@ public class ConfigManager {
 
     private static final int MIN_REQUEST_FREQUENCY = 1;
 
-    private static final String SP_KEY_MONITOR_ENABLED = "monitor_enabled";
-
-    private static final String KEY_DISABLE_MONITOR = "applog_disable_monitor";
-
     private final Context mApp;
+
+    private final AppLogInstance appLogInstance;
 
     private final InitConfig mInitConfig;
 
@@ -130,9 +143,8 @@ public class ConfigManager {
 
     private volatile JSONObject mConfig;
 
-    private final HashSet<String> mBlockSetV1;
-
-    private final HashSet<String> mBlockSetV3;
+    private final Set<String> mBlockSetV1 = new HashSet<>();
+    private final Set<String> mBlockSetV3 = new HashSet<>();
 
     private volatile HashSet<String> mRealTimeEvents;
 
@@ -146,14 +158,19 @@ public class ConfigManager {
 
     private long mEventIntervalFromLogResp = 0L;
 
+    // 进入后台立即上报开关，默认开启，可以通过 app_log 回包关闭
+    private boolean mEnterBackgroundSendDisabled = false;
+
     /**
      * 0->off 1->open, auto upload pageNavigate/click event server version switch compare to local
-     * switch {@link com.bytedance.applog.InitConfig}.mAutoTrackEnabled
+     * switch {@link InitConfig}.mAutoTrackEnabled
      */
     private int mEnableBav = 1;
+    private final AppLogEventFilterConfig blockAndWhiteListConfig;
 
     public ConfigManager(
-            final IAppLogInstance appLogInstance, final Context app, final InitConfig config) {
+            final AppLogInstance appLogInstance, final Context app, final InitConfig config) {
+        this.appLogInstance = appLogInstance;
         mApp = app;
         mInitConfig = config;
         mSp =
@@ -169,8 +186,7 @@ public class ConfigManager {
                         mApp,
                         AppLogHelper.getInstanceSpName(appLogInstance, SP_SESSION),
                         Context.MODE_PRIVATE);
-        mBlockSetV1 = new HashSet<>();
-        mBlockSetV3 = new HashSet<>();
+        blockAndWhiteListConfig = new AppLogEventFilterConfig(mSp, appLogInstance.getLogger());
     }
 
     public boolean autoStart() {
@@ -197,16 +213,8 @@ public class ConfigManager {
         return mInitConfig.isClearDidAndIid();
     }
 
-    public boolean isMonitorEnabled() {
-        return mSp.getBoolean(SP_KEY_MONITOR_ENABLED, mInitConfig.isMonitorEnabled());
-    }
-
     public String getClearKey() {
         return mInitConfig.getClearKey();
-    }
-
-    String getAliyunUdid() {
-        return mInitConfig.getAliyunUdid();
     }
 
     public String getLastDay() {
@@ -251,14 +259,15 @@ public class ConfigManager {
         return mConfig;
     }
 
+    /**
+     * 从log_setting接口获取配置后保存到本地缓存
+     *
+     * @param config JSONObject
+     */
     public void setConfig(final JSONObject config) {
-        TLog.d(
-                new TLog.LogGetter() {
-                    @Override
-                    public String log() {
-                        return "setConfig" + ", " + config.toString();
-                    }
-                });
+        appLogInstance
+                .getLogger()
+                .debug(Collections.singletonList("ConfigManager"), "Set config:{}", config);
 
         mConfig = config;
 
@@ -280,6 +289,13 @@ public class ConfigManager {
             editor.remove(SP_KEY_EVENT_INTERVAL);
         }
 
+        final int eventSize = config.optInt(SP_KEY_EVENT_SIZE, -1);
+        if (isValidEventSize(eventSize)) {
+            editor.putInt(SP_KEY_EVENT_SIZE, eventSize);
+        } else {
+            editor.remove(SP_KEY_EVENT_SIZE);
+        }
+
         final int sendLaunchTimely = config.optInt(SP_KEY_LAUNCH_TIMELY, 0);
         if (sendLaunchTimely > 0 && sendLaunchTimely <= SEVEN_DAY_IN_SECONDS) {
             editor.putInt(SP_KEY_LAUNCH_TIMELY, sendLaunchTimely);
@@ -294,21 +310,12 @@ public class ConfigManager {
             editor.remove(KEY_ABTEST_INTERVAL);
         }
 
-        // use the local api settings when the backend config has no setting
         final boolean bavCollect = config.optBoolean(KEY_BAV_ENABLE, isLocalBavEnable());
-        if (bavCollect) {
-            editor.putBoolean(KEY_BAV_ENABLE, true);
-        } else {
-            editor.remove(KEY_BAV_ENABLE);
-        }
+        editor.putBoolean(KEY_BAV_ENABLE, bavCollect);
         setEnableBav(bavCollect);
 
-        final boolean bavAbConfig = config.optBoolean(KEY_BAV_AB_ENABLE, false);
-        if (bavAbConfig) {
-            editor.putBoolean(KEY_BAV_AB_ENABLE, true);
-        } else {
-            editor.remove(KEY_BAV_AB_ENABLE);
-        }
+        final boolean bavAbConfig = config.optBoolean(KEY_BAV_AB_ENABLE, isLocalABEnable());
+        editor.putBoolean(KEY_BAV_AB_ENABLE, bavAbConfig);
 
         JSONArray realTimeEvents = config.optJSONArray(KEY_REAL_TIME_EVENTS);
         if (realTimeEvents != null && realTimeEvents.length() > 0) {
@@ -317,6 +324,13 @@ public class ConfigManager {
             editor.remove(KEY_REAL_TIME_EVENTS);
         }
         mRealTimeEvents = null;
+
+        JSONArray sensitiveFields = config.optJSONArray(KEY_SENSITIVE_FIELDS);
+        if (sensitiveFields != null && sensitiveFields.length() > 0) {
+            editor.putString(KEY_SENSITIVE_FIELDS, sensitiveFields.toString());
+        } else {
+            editor.remove(KEY_SENSITIVE_FIELDS);
+        }
 
         editor.putLong(KEY_CONFIG_TS, current);
 
@@ -327,19 +341,80 @@ public class ConfigManager {
         }
         editor.putLong(SP_KEY_CONFIG_INTERVAL, configInterval);
 
-        // 是否禁用内部监控
-        if (config.has(KEY_DISABLE_MONITOR)) {
-            int disableMonitor = config.optInt(KEY_DISABLE_MONITOR, 0);
-            editor.putBoolean(SP_KEY_MONITOR_ENABLED, disableMonitor == 1);
+        if (config.has(SP_KEY_ENTER_BACKGROUND_NOT_SEND)) {
+            boolean enterBackgroundNotSend = config.optInt(SP_KEY_ENTER_BACKGROUND_NOT_SEND) == 1;
+            editor.putBoolean(SP_KEY_ENTER_BACKGROUND_NOT_SEND, enterBackgroundNotSend);
         }
 
         editor.apply();
+
+        sendOriginCachedConfig2DevTools();
+    }
+
+    /** 发送缓存的配置信息到devtools */
+    public void sendOriginCachedConfig2DevTools() {
+        if (getConfigTs() <= 0) {
+            return;
+        }
+        LogUtils.sendJsonFetcher(
+                "remote_settings",
+                new EventBus.DataFetcher() {
+                    @Override
+                    public Object fetch() {
+                        JSONObject json = new JSONObject();
+                        JSONObject cacheConfig = new JSONObject();
+                        try {
+                            json.put("appId", appLogInstance.getAppId());
+
+                            long V_SP_KEY_SESSION_INTERVAL =
+                                    mSp.getLong(SP_KEY_SESSION_INTERVAL, 0);
+                            cacheConfig.put(
+                                    "后台会话时长",
+                                    V_SP_KEY_SESSION_INTERVAL > 0
+                                            ? (V_SP_KEY_SESSION_INTERVAL + "ms")
+                                            : "--");
+                            long V_SP_KEY_EVENT_INTERVAL = mSp.getLong(SP_KEY_EVENT_INTERVAL, 0);
+                            cacheConfig.put(
+                                    "事件上报周期",
+                                    V_SP_KEY_EVENT_INTERVAL > 0
+                                            ? (V_SP_KEY_EVENT_INTERVAL + "ms")
+                                            : "--");
+                            long V_KEY_ABTEST_INTERVAL = mSp.getLong(KEY_ABTEST_INTERVAL, 0);
+                            cacheConfig.put(
+                                    "AB实验更新周期",
+                                    V_KEY_ABTEST_INTERVAL > 0
+                                            ? (V_KEY_ABTEST_INTERVAL + "ms")
+                                            : "--");
+                            cacheConfig.put("全埋点开关", mSp.getBoolean(KEY_BAV_ENABLE, false));
+                            cacheConfig.put("AB实验开关", mSp.getBoolean(KEY_BAV_AB_ENABLE, false));
+                            cacheConfig.put("实时埋点事件", mSp.getString(KEY_REAL_TIME_EVENTS, "[]"));
+                            long V_SP_KEY_CONFIG_INTERVAL = mSp.getLong(SP_KEY_CONFIG_INTERVAL, 0);
+                            cacheConfig.put(
+                                    "服务端配置更新周期",
+                                    V_SP_KEY_CONFIG_INTERVAL > 0
+                                            ? (V_SP_KEY_CONFIG_INTERVAL + "ms")
+                                            : "--");
+                            int eventSize = mSp.getInt(SP_KEY_EVENT_SIZE, -1);
+                            cacheConfig.put("事件累计上报数量", (eventSize >= 0 ? eventSize : "--") + "条");
+                            cacheConfig.put("禁止采集的敏感字段", mSp.getString(KEY_SENSITIVE_FIELDS, "--"));
+                            cacheConfig.put("服务端黑名单事件", mBlockSetV3);
+                            json.put("config", cacheConfig);
+                        } catch (Throwable ignored) {
+                        }
+                        return json;
+                    }
+                });
     }
 
     public long getConfigTs() {
         return mSp.getLong(KEY_CONFIG_TS, 0L);
     }
 
+    /**
+     * TODO: support realtime event
+     *
+     * @return Set
+     */
     private HashSet<String> getRealTimeEvents() {
         HashSet<String> realTimeEvents = mRealTimeEvents;
         if (realTimeEvents == null) {
@@ -354,10 +429,16 @@ public class ConfigManager {
                     }
                 }
             } catch (Throwable t) {
-                TLog.ysnp(t);
+                appLogInstance
+                        .getLogger()
+                        .error(
+                                Collections.singletonList("ConfigManager"),
+                                "getRealTimeEvents failed",
+                                t);
                 realTimeEvents = new HashSet<>();
             }
         }
+        mRealTimeEvents = realTimeEvents;
         return realTimeEvents;
     }
 
@@ -379,7 +460,9 @@ public class ConfigManager {
                 Bundle bundle = ai.metaData;
                 channel = bundle.getString("UMENG_CHANNEL");
             } catch (Throwable e) {
-                TLog.e("getChannel", e);
+                appLogInstance
+                        .getLogger()
+                        .error(Collections.singletonList("ConfigManager"), "getChannel failed", e);
             }
         }
         return channel;
@@ -425,18 +508,18 @@ public class ConfigManager {
     }
 
     void setUserUniqueId(final String id) {
-        mCustomSp.edit().putString(Api.KEY_USER_UNIQUE_ID, id).apply();
+        mCustomSp.edit().putString(Api.KEY_USER_UNIQUE_ID, Utils.toString(id)).apply();
     }
 
     void setUserUniqueIdType(final String type) {
         mCustomSp.edit().putString(Api.KEY_USER_UNIQUE_ID_TYPE, type).apply();
     }
 
-    String getUserUniqueId() {
-        return mCustomSp.getString(Api.KEY_USER_UNIQUE_ID, null);
+    public String getUserUniqueId() {
+        return mCustomSp.getString(Api.KEY_USER_UNIQUE_ID, "");
     }
 
-    String getUserUniqueIdType() {
+    public String getUserUniqueIdType() {
         return mCustomSp.getString(Api.KEY_USER_UNIQUE_ID_TYPE, null);
     }
 
@@ -460,10 +543,32 @@ public class ConfigManager {
     }
 
     void setAbConfig(final JSONObject config) {
+        appLogInstance
+                .getLogger()
+                .debug(Collections.singletonList("ConfigManager"), "setAbConfig:{}", config);
+
         String abConfigStr = config == null ? "" : config.toString();
-        TLog.d("setAbConfig" + ", " + abConfigStr);
         mCustomSp.edit().putString(CUSTOM_AB_CONFIG, abConfigStr).apply();
         mAbConfig = null;
+
+        // 发送配置
+        LogUtils.sendJsonFetcher(
+                "set_abconfig",
+                new EventBus.DataFetcher() {
+                    @Override
+                    public Object fetch() {
+                        JSONObject data = new JSONObject();
+                        JSONObject c = new JSONObject();
+                        JsonUtils.mergeJsonObject(config, c);
+                        try {
+                            data.put("appId", appLogInstance.getAppId());
+                            data.put("config", c);
+                        } catch (Throwable ignored) {
+
+                        }
+                        return data;
+                    }
+                });
     }
 
     public JSONObject getAbConfig() {
@@ -485,13 +590,18 @@ public class ConfigManager {
     }
 
     void setExternalAbVersion(final String version) {
-        TLog.d("setExternalAbVersion: " + version);
+        appLogInstance
+                .getLogger()
+                .debug(
+                        Collections.singletonList("ConfigManager"),
+                        "setExternalAbVersion:{}",
+                        version);
 
         mCustomSp.edit().putString(EXTERNAL_AB_VERSION, version).apply();
         mExternalAbVersion = null;
     }
 
-    String getExternalAbVersion() {
+    public String getExternalAbVersion() {
         String externalAbVersion = mExternalAbVersion;
         if (TextUtils.isEmpty(externalAbVersion)) {
             synchronized (this) {
@@ -503,14 +613,18 @@ public class ConfigManager {
     }
 
     public boolean isAbEnable() {
-        return mSp.getBoolean(KEY_BAV_AB_ENABLE, false);
+        return isLocalABEnable() && mSp.getBoolean(KEY_BAV_AB_ENABLE, isLocalABEnable());
+    }
+
+    private boolean isLocalABEnable() {
+        return mInitConfig.isAbEnable();
     }
 
     public boolean isBavEnable() {
         return mSp.getBoolean(KEY_BAV_ENABLE, isLocalBavEnable());
     }
 
-    public boolean isLocalBavEnable() {
+    private boolean isLocalBavEnable() {
         return mInitConfig.isAutoTrackEnabled();
     }
 
@@ -540,6 +654,10 @@ public class ConfigManager {
         } else {
             return mSp.getLong(SP_KEY_EVENT_INTERVAL, EVENT_INTERVAL_DEFAULT);
         }
+    }
+
+    public int getEventSize() {
+        return mSp.getInt(SP_KEY_EVENT_SIZE, -1);
     }
 
     String getAppTrack() {
@@ -577,8 +695,8 @@ public class ConfigManager {
         return mSp.getString(SP_KEY_APP_REGION, null);
     }
 
-    void setAppRegion(final String language) {
-        mSp.edit().putString(SP_KEY_APP_REGION, language).apply();
+    void setAppRegion(final String appRegion) {
+        mSp.edit().putString(SP_KEY_APP_REGION, appRegion).apply();
     }
 
     void setGoogleAid(String googleAid) {
@@ -590,34 +708,9 @@ public class ConfigManager {
      *
      * @return whether filter finished
      */
-    // TODO: 2019-12-31  若黑名单未加载成功，则返回false。
-    public boolean filterBlock(final List<BaseData> datas) {
-        if (datas == null || datas.size() == 0) {
-            return true;
-        }
-        if (mBlockSetV1.size() == 0 && mBlockSetV3.size() == 0) {
-            return true;
-        }
-        Iterator<BaseData> iterator = datas.iterator();
-        while (iterator.hasNext()) {
-            BaseData data = iterator.next();
-            if (data instanceof EventV3) {
-                EventV3 eventV3 = (EventV3) data;
-                if (mBlockSetV3.contains(eventV3.getEvent())) {
-                    iterator.remove();
-                }
-            }
-        }
+    public boolean filterBlockAndWhite(final List<BaseData> datas, Engine engine) {
+        blockAndWhiteListConfig.filterBlockAndWhite(datas, engine);
         return true;
-    }
-
-    public void updateBlock(final HashSet<String> blockSetV1, final HashSet<String> blockSetV3) {
-        if (blockSetV1 != null) {
-            mBlockSetV1.addAll(blockSetV1);
-        }
-        if (blockSetV3 != null) {
-            mBlockSetV3.addAll(blockSetV3);
-        }
     }
 
     public void updateLogRespConfig(@NonNull JSONObject resp) {
@@ -640,17 +733,21 @@ public class ConfigManager {
             mBackoffWindowSendCount = 0;
         }
         mEventIntervalFromLogResp = resp.optLong(SP_KEY_EVENT_INTERVAL, 0) * 1000L;
-        TLog.d(
-                "updateLogRespConfig mBackoffRatio: "
-                        + mBackoffRatio
-                        + ", mMaxRequestFrequency: "
-                        + mMaxRequestFrequency
-                        + ", mBackoffWindowStartTime: "
-                        + mBackoffWindowStartTime
-                        + ", mBackoffWindowSendCount: "
-                        + mBackoffWindowSendCount
-                        + ", mEventIntervalFromLogResp: "
-                        + mEventIntervalFromLogResp);
+        mEnterBackgroundSendDisabled = resp.optInt(SP_KEY_ENTER_BACKGROUND_NOT_SEND) == 1;
+        appLogInstance
+                .getLogger()
+                .debug(
+                        Collections.singletonList("ConfigManager"),
+                        "updateLogRespConfig mBackoffRatio: "
+                                + mBackoffRatio
+                                + ", mMaxRequestFrequency: "
+                                + mMaxRequestFrequency
+                                + ", mBackoffWindowStartTime: "
+                                + mBackoffWindowStartTime
+                                + ", mBackoffWindowSendCount: "
+                                + mBackoffWindowSendCount
+                                + ", mEventIntervalFromLogResp: "
+                                + mEventIntervalFromLogResp);
     }
 
     String getAppName() {
@@ -685,16 +782,12 @@ public class ConfigManager {
         return mInitConfig.getZiJieCloudPkg();
     }
 
-    public boolean isMacEnable() {
-        return mInitConfig.isMacEnable();
-    }
-
     public boolean isDeferredALinkEnable() {
         return mInitConfig.isDeferredALinkEnabled();
     }
 
     public boolean isImeiEnable() {
-        return mInitConfig.isImeiEnable();
+        return mInitConfig.isImeiEnable() && !isInSensitiveFieldsConfig("IMEI");
     }
 
     public String getAppImei() {
@@ -717,6 +810,10 @@ public class ConfigManager {
         return interval >= MIN_EVENT_INTERVAL && interval <= MAX_EVENT_INTERVAL;
     }
 
+    public boolean isValidEventSize(int size) {
+        return size >= MIN_EVENT_SIZE && size <= MAX_EVENT_SIZE;
+    }
+
     public boolean backoffLogRequestAsRatio() {
         if (mBackoffRatio > 0) {
             long curEventInterval = getEventInterval();
@@ -735,39 +832,78 @@ public class ConfigManager {
         }
         if (mBackoffRatio >= BACK_OFF_DENOMINATOR) {
             return true;
-        } else if (mBackoffRatio > 0
-                && mBackoffRatio < BACK_OFF_DENOMINATOR
-                && new Random().nextInt(BACK_OFF_DENOMINATOR) < mBackoffRatio) {
-            return true;
-        }
-        return false;
+        } else return mBackoffRatio > 0
+                && new Random().nextInt(BACK_OFF_DENOMINATOR) < mBackoffRatio;
     }
 
     public boolean isClearABCacheOnUserChange() {
-        return getInitConfig() != null && getInitConfig().isClearABCacheOnUserChange();
-    }
-
-    /** 是否禁用oaid */
-    public boolean isOaidDisabled() {
-        return null != getInitConfig() && !getInitConfig().isOaidEnabled();
-    }
-
-    /** 是否开启oaid采集 */
-    public boolean isOaidEnabled() {
-        return !isOaidDisabled();
+        return getInitConfig().isClearABCacheOnUserChange();
     }
 
     /** 是否开启采集屏幕方向 */
     public boolean isScreenOrientationEnabled() {
-        return null != getInitConfig() && getInitConfig().isScreenOrientationEnabled();
+        return getInitConfig().isScreenOrientationEnabled();
     }
 
     /**
-     * 是否禁止采集运营商信息，默认运行采集
+     * 是否采集运营商信息，默认运行采集
      *
-     * @return true：禁止
+     * @return true：允许
      */
-    public boolean isOperatorInfoDisabled() {
-        return null != getInitConfig() && !getInitConfig().isOperatorInfoEnabled();
+    public boolean isOperatorInfoEnabled() {
+        return getInitConfig().isOperatorInfoEnabled() && !isInSensitiveFieldsConfig(Api.KEY_CARRIER);
+    }
+
+    /** 是否开启设备迁移 */
+    public boolean isMigrateEnabled() {
+        return getInitConfig().isMigrateEnabled();
+    }
+
+    boolean isHarmonyEnabled() {
+        return getInitConfig().isHarmonyEnabled();
+    }
+
+    /**
+     * 是否关闭进入后台是否立即上报，默认开启，可以通过 log_settings、app_log 接口返回配置关闭
+     * @return 是否关闭进入后台是否立即上报
+     */
+    public boolean isEnterBackgroundSendDisabled() {
+        return mEnterBackgroundSendDisabled || mSp.getBoolean(SP_KEY_ENTER_BACKGROUND_NOT_SEND, false);
+    }
+
+    private boolean isInSensitiveFieldsConfig(String sensitiveField) {
+        String sensitiveFieldsStr = mSp.getString(KEY_SENSITIVE_FIELDS, "");
+        return !TextUtils.isEmpty(sensitiveFieldsStr) && sensitiveFieldsStr.contains(sensitiveField);
+    }
+
+    public List<BaseData> filterRealTime(final List<BaseData> datas) {
+        List<BaseData> realData = null;
+        Iterator<BaseData> iterator = datas.iterator();
+        while (iterator.hasNext()) {
+            BaseData data = iterator.next();
+            if (data instanceof EventV3) {
+                EventV3 eventV3 = (EventV3) data;
+                if (getRealTimeEvents().contains(eventV3.getEvent())) {
+                    iterator.remove();
+                    if (realData == null) {
+                        realData = new ArrayList<>();
+                    }
+                    realData.add(data);
+                }
+            }
+        }
+        return realData;
+    }
+
+    public boolean isAndroidIdEnabled() {
+        return mInitConfig.isAndroidIdEnabled() && !isInSensitiveFieldsConfig(Api.KEY_OPEN_UDID);
+    }
+
+    public int getGaidTimeOutMilliSeconds() {
+        return getInitConfig().getGaidTimeOutMilliSeconds();
+    }
+
+    public void parseEventConfigList(JSONObject o) {
+        blockAndWhiteListConfig.parseEventConfigList(o);
     }
 }

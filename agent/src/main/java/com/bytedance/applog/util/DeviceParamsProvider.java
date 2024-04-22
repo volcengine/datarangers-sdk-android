@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.os.Handler;
 import android.text.TextUtils;
 
+import com.bytedance.applog.AppLogInstance;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.manager.DeviceManager;
 import com.bytedance.applog.server.Api;
@@ -20,6 +21,8 @@ import org.json.JSONObject;
 
 import java.math.BigInteger;
 import java.security.SecureRandom;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -40,14 +43,19 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
     private static String[] sAccid;
     private static String sSerialNumber;
 
-    /**
-     * 设备注册关键字段添加的后缀，用于生成新的did
-     */
+    /** 设备注册关键字段添加的后缀，用于生成新的did */
     private final String mLocalTestSuffix;
 
+    private final AppLogInstance appLogInstance;
     private final ConfigManager mConfig;
+    private final List<String> loggerTags = Collections.singletonList(TAG);
 
-    public DeviceParamsProvider(Context context, ConfigManager cgm, AccountCacheHelper cache) {
+    public DeviceParamsProvider(
+            AppLogInstance appLogInstance,
+            Context context,
+            ConfigManager cgm,
+            AccountCacheHelper cache) {
+        this.appLogInstance = appLogInstance;
         mConfig = cgm;
         mLocalTestSuffix = createLocalTestSuffix(cgm.isLocalTest());
         this.mContext = context.getApplicationContext();
@@ -76,10 +84,8 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
         if (!TextUtils.isEmpty(sOpenUdid)) {
             return sOpenUdid;
         }
-        String openudid =
-                (null != mConfig.getInitConfig() && !mConfig.getInitConfig().isAndroidIdEnabled())
-                        ? ""
-                        : HardwareUtils.getSecureAndroidId(mContext);
+        String openudid = !mConfig.isAndroidIdEnabled() ? ""
+                : HardwareUtils.getSecureAndroidId(mContext);
         try {
             if (!Utils.isValidUDID(openudid) || DeviceManager.FAKE_ANDROID_ID.equals(openudid)) {
                 // load from SharedPreferences
@@ -116,7 +122,7 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
                 openudid = mCacheHandler.loadOpenUdid(null, openudid);
             }
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error(loggerTags, "getOpenUdid failed", e);
         }
         if (!TextUtils.isEmpty(openudid)) {
             openudid += mLocalTestSuffix;
@@ -158,7 +164,7 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
             sOpenClientUdid = candidate;
             return candidate;
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error(loggerTags, "getClientUDID failed", e);
             return "";
         }
     }
@@ -177,7 +183,7 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
             sSerialNumber = serialNumber;
             return serialNumber;
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error(loggerTags, "getSerialNumber failed", e);
         }
         return null;
     }
@@ -199,7 +205,7 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
             sAccid = accid;
             return accid;
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error(loggerTags, "getSimSerialNumbers failed", e);
         }
         return null;
     }
@@ -221,7 +227,7 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
             sUdid = udId;
             return udId;
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error(loggerTags, "getUdId failed", e);
         }
         return null;
     }
@@ -248,7 +254,7 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
             sUdidList = udIdList;
             return sUdidList;
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance.getLogger().error(loggerTags, "getUdIdList failed", e);
         }
         return null;
     }
@@ -295,18 +301,15 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
     @Override
     public void clear(final String clearKey) {
         mCacheHandler.clear(clearKey);
-        TLog.d(
-                new TLog.LogGetter() {
-                    @Override
-                    public String log() {
-                        return "DeviceParamsProvider#clear clearKey="
+
+        appLogInstance
+                .getLogger()
+                .debug(
+                        loggerTags,
+                        "DeviceParamsProvider#clear clearKey="
                                 + clearKey
                                 + " sDeviceId="
-                                + sDeviceId
-                                + " mCacheHandler.loadDeviceId()="
-                                + mCacheHandler.loadDeviceId("", "");
-                    }
-                });
+                                + sDeviceId);
     }
 
     public void setCacheHandler(Handler handler) {
@@ -314,18 +317,15 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
     }
 
     public void clearDidAndIid(Context context, final String clearKey) {
-        TLog.d(
-                new TLog.LogGetter() {
-                    @Override
-                    public String log() {
-                        return "DeviceParamsProvider#clearDidAndIid clearKey="
+        appLogInstance
+                .getLogger()
+                .debug(
+                        loggerTags,
+                        "DeviceParamsProvider#clearDidAndIid clearKey="
                                 + clearKey
                                 + " sDeviceId="
-                                + sDeviceId
-                                + " mCacheHandler.loadDeviceId()="
-                                + mCacheHandler.loadDeviceId("", "");
-                    }
-                });
+                                + sDeviceId);
+
         if (TextUtils.isEmpty(clearKey)) {
             return;
         }
@@ -349,9 +349,13 @@ public class DeviceParamsProvider implements IDeviceRegisterParameter {
             editor.apply();
             // clear
             mCacheHandler.clear(Api.KEY_DEVICE_ID);
-            TLog.d("clearKey : " + clearKey + " :clear installId and deviceId finish");
+            appLogInstance
+                    .getLogger()
+                    .debug(loggerTags, "clearKey:{} installId and deviceId finish", clearKey);
         } else {
-            TLog.d("clearKey : " + clearKey + " : is already cleared");
+            appLogInstance
+                    .getLogger()
+                    .debug(loggerTags, "clearKey:{} is already cleared", clearKey);
         }
     }
 }

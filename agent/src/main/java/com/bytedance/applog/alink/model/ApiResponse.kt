@@ -1,9 +1,8 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.alink.model
 
-import org.json.JSONException
+import com.bytedance.applog.network.RangersHttpTimeoutException
 import org.json.JSONObject
-
 
 /**
  * 标准Api返回
@@ -24,5 +23,15 @@ class ApiResponse<T : BaseData> {
                 data = BaseData.fromJson(response.optJSONObject("data"), clazz)
             }
         }
+
+        fun <T : BaseData> parseThrowable(throwable: Throwable): ApiResponse<T> {
+            return ApiResponse<T>().apply {
+                message = when (throwable) {
+                    is RangersHttpTimeoutException -> "DDL request timeout"
+                    else -> "$throwable message:${throwable.message}"
+                }
+            }
+        }
+
     }
 }

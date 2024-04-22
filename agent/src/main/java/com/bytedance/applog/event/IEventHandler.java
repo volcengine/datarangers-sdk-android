@@ -23,5 +23,5 @@ public interface IEventHandler {
      * @param properties 事件属性
      * @return EventPolicy
      */
-    EventPolicy onReceive(int eventType, @NonNull String eventName, @NonNull JSONObject properties);
+    EventPolicy onReceive(int eventType, @NonNull String eventName, @NonNull JSONObject properties, @NonNull EventBasicData basisData);
 }

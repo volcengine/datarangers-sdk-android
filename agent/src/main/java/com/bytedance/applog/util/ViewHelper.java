@@ -3,23 +3,25 @@ package com.bytedance.applog.util;
 
 import android.app.Activity;
 import android.graphics.Rect;
-import android.support.v4.view.ViewPager;
-import android.text.TextUtils;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.widget.AdapterView;
+import android.widget.ExpandableListView;
 
 import androidx.annotation.RequiresApi;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bytedance.applog.R;
 import com.bytedance.applog.collector.Navigator;
+import com.bytedance.applog.log.LoggerImpl;
 import com.bytedance.applog.store.Click;
 
-import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * @author shiyanlong
@@ -28,38 +30,44 @@ public class ViewHelper {
 
     static final int TAG_USER_ID = 84159242;
 
+    private static final int TAG_BANNERS = 84159247;
+
     static final int TAG_CONTENT = 84159244;
 
     static final int TAG_WATCH_TEXT = 84159251;
 
     public static View getMenuItemView(MenuItem menuItem) {
-        if (menuItem != null) {
-            WindowUtils.initialize();
-            View[] windows = WindowUtils.getWindowViews();
+        if (menuItem == null) {
+            return null;
+        } else {
+            WindowHelper.init();
+            View[] windows = WindowHelper.getWindowViews();
 
             try {
                 for (View window : windows) {
-                    if (window.getClass() == WindowUtils.sPopupWindowClass) {
+                    if (window.getClass() == WindowHelper.sPopupWindowClazz) {
                         final View menuView = findMenuItemView(window, menuItem);
                         if (menuView != null) {
                             return menuView;
                         }
                     }
                 }
-            } catch (InvocationTargetException e) {
-                TLog.e(e);
-            } catch (IllegalAccessException e) {
-                TLog.e(e);
+            } catch (Throwable e) {
+                LoggerImpl.global()
+                        .error(
+                                Collections.singletonList("ViewHelper"),
+                                "getMenuItemView failed",
+                                e);
             }
 
+            return null;
         }
-        return null;
     }
 
     /**
      * 根据view获取click
      *
-     * @param view             view
+     * @param view view
      * @param filterIgnoreView 是否过滤带ignore tag的view, web圈选的时候要求获取完整的dom,不过滤带ignore tag的view
      * @return
      */
@@ -70,71 +78,133 @@ public class ViewHelper {
             if (filterIgnoreView && ViewUtils.isIgnoredView(view)) {
                 return null;
             }
-            WindowUtils.initialize();
-
-            ArrayList<View> views = new ArrayList<>();
-            views.add(view);
-
+            ArrayList<View> viewTreeList = new ArrayList<>(8);
             ViewParent parent = view.getParent();
+            viewTreeList.add(view);
+
             while (parent instanceof ViewGroup) {
-                views.add((ViewGroup) parent);
+                viewTreeList.add((ViewGroup) parent);
                 parent = parent.getParent();
             }
 
-            final int lastIndex = views.size() - 1;
-            View rootView = views.get(lastIndex);
-
-            StringBuilder path = new StringBuilder(WindowUtils.getWindowPrefix(rootView));
-
+            int endIndex = viewTreeList.size() - 1;
+            View rootView = viewTreeList.get(endIndex);
+            WindowHelper.init();
+            String bannerText = null;
+            int viewPosition = 0;
+            ArrayList<String> listPositions = null;
             boolean hasUserId = false;
-            if (!WindowUtils.isDecorView(rootView) && !(rootView.getParent() instanceof View)) {
-                path.append("/").append(ViewUtils.getSimpleClassName(rootView.getClass()));
+            String opx = WindowHelper.getSubWindowPrefix(rootView);
+            String px = opx;
+            if (!WindowHelper.isDecorView(rootView) && !(rootView.getParent() instanceof View)) {
+                px = opx = opx + "/" + ViewUtils.getSimpleClassName(rootView.getClass());
                 String id = ViewUtils.getIdName(rootView, false);
                 if (id != null) {
                     if (rootView.getTag(TAG_USER_ID) != null) {
                         hasUserId = true;
                     }
-                    path.append("#").append(id);
+
+                    px = opx = opx + "#" + id;
                 }
             }
-            int viewPos;
-            ArrayList<String> positionList = null;
-            if (rootView instanceof ViewGroup) {
-                ViewGroup viewGroup = (ViewGroup) rootView;
 
-                for (int i = lastIndex - 1; i >= 0; i--) {
-                    View childView = views.get(i);
+            if (rootView instanceof ViewGroup) {
+                ViewGroup parentView = (ViewGroup) rootView;
+
+                for (int i = endIndex - 1; i >= 0; --i) {
+                    View childView = viewTreeList.get(i);
                     Object viewName = childView.getTag(R.id.applog_tag_view_name);
-                    if (viewName == null) {
+                    if (viewName != null) {
+                        opx = "/" + viewName;
+                        px = px + "/" + viewName;
+                    } else {
                         viewName = ViewUtils.getSimpleClassName(childView.getClass());
-                        viewPos = viewGroup.indexOfChild(childView);
-                        if (viewGroup instanceof AdapterView) {
-                            viewPos += ((AdapterView) viewGroup).getFirstVisiblePosition();
-                        } else if (ClassHelper.isRecyclerView(viewGroup)) {
-                            int adapterPosition =
-                                    getChildAdapterPositionInRecyclerView(childView, viewGroup);
-                            if (adapterPosition >= 0) {
-                                viewPos = adapterPosition;
+                        viewPosition = parentView.indexOfChild(childView);
+                        if (ClassHelper.instanceOfAndroidXViewPager(parentView) || ClassHelper.instanceOfSupportViewPager(parentView)) {
+                            try {
+                                Method method = view.getClass().getMethod("getCurrentItem");
+                                viewPosition = (int) method.invoke(view);
+                            } catch (Throwable e) {
+                                viewPosition = parentView.indexOfChild(childView);
                             }
-                        } else if (ClassHelper.isSupportViewPager(viewGroup)) {
-                            viewPos = ((ViewPager) viewGroup).getCurrentItem();
-                        } else if (ClassHelper.isAndroidXViewPager(viewGroup)) {
-                            viewPos =
-                                    ((androidx.viewpager.widget.ViewPager) viewGroup)
-                                            .getCurrentItem();
+                        } else if (parentView instanceof AdapterView) {
+                            AdapterView listView = (AdapterView) parentView;
+                            viewPosition += listView.getFirstVisiblePosition();
+                        } else if (ClassHelper.instanceOfRecyclerView(parentView)) {
+                            int adapterPosition =
+                                    getChildAdapterPositionInRecyclerView(childView, parentView);
+                            if (adapterPosition >= 0) {
+                                viewPosition = adapterPosition;
+                            }
                         }
 
-                        if (ViewUtils.isListView(viewGroup)) {
-                            if (positionList == null) {
-                                positionList = new ArrayList<>();
+                        if (parentView instanceof ExpandableListView) {
+                            ExpandableListView listParent = (ExpandableListView) parentView;
+                            long elp = listParent.getExpandableListPosition(viewPosition);
+                            int footerIndex;
+                            if (ExpandableListView.getPackedPositionType(elp)
+                                    == ExpandableListView.PACKED_POSITION_TYPE_NULL) {
+                                if (viewPosition < listParent.getHeaderViewsCount()) {
+                                    opx = opx + "/ELH[" + viewPosition + "]/" + viewName + "[0]";
+                                    px = px + "/ELH[" + viewPosition + "]/" + viewName + "[0]";
+                                } else {
+                                    footerIndex =
+                                            viewPosition
+                                                    - (listParent.getCount()
+                                                            - listParent.getFooterViewsCount());
+                                    opx = opx + "/ELF[" + footerIndex + "]/" + viewName + "[0]";
+                                    px = px + "/ELF[" + footerIndex + "]/" + viewName + "[0]";
+                                }
+                            } else {
+                                footerIndex = ExpandableListView.getPackedPositionGroup(elp);
+                                int childIdx = ExpandableListView.getPackedPositionChild(elp);
+                                if (childIdx != -1) {
+                                    if (listPositions == null) {
+                                        listPositions = new ArrayList<>(4);
+                                    }
+                                    listPositions.add(String.valueOf(footerIndex));
+                                    listPositions.add(String.valueOf(childIdx));
+                                    px = px + "/ELVG[-]/ELVC[-]/" + viewName + "[0]";
+                                    opx =
+                                            opx
+                                                    + "/ELVG["
+                                                    + footerIndex
+                                                    + "]/ELVC["
+                                                    + childIdx
+                                                    + "]/"
+                                                    + viewName
+                                                    + "[0]";
+                                } else {
+                                    if (listPositions == null) {
+                                        listPositions = new ArrayList<>(4);
+                                    }
+                                    listPositions.add(String.valueOf(footerIndex));
+                                    px = px + "/ELVG[-]/" + viewName + "[0]";
+                                    opx = opx + "/ELVG[" + footerIndex + "]/" + viewName + "[0]";
+                                }
                             }
-                            positionList.add(String.valueOf(viewPos));
-                            path.append("/").append(viewName).append("[-]");
-                        } else if (!ClassHelper.isAndroidXSwipeRefreshLayout(viewGroup)
-                                && !ClassHelper.isSupportSwipeRefreshLayout(viewGroup)) {
-                            path.append("/").append(viewName).append("[").append(viewPos).append("]");
+                        } else if (ViewUtils.isListView(parentView)) {
+                            Object bannerTag = parentView.getTag(TAG_BANNERS);
+                            if (bannerTag instanceof List && ((List) bannerTag).size() > 0) {
+                                final List<String> banners = (List) bannerTag;
+                                viewPosition =
+                                        ViewUtils.calcBannerItemPosition(banners, viewPosition);
+                                bannerText = ViewUtils.truncateContent(banners.get(viewPosition));
+                            }
+
+                            if (listPositions == null) {
+                                listPositions = new ArrayList<>(4);
+                            }
+                            listPositions.add(String.valueOf(viewPosition));
+                            px = px + "/" + viewName + "[-]";
+                            opx = opx + "/" + viewName + "[" + viewPosition + "]";
+                        } else if (!ClassHelper.instanceofAndroidXSwipeRefreshLayout(parentView)
+                                && !ClassHelper.instanceOfSupportSwipeRefreshLayout(parentView)) {
+                            opx = opx + "/" + viewName + "[" + viewPosition + "]";
+                            px = px + "/" + viewName + "[" + viewPosition + "]";
                         } else {
-                            path.append("/").append(viewName).append("[0]");
+                            opx = opx + "/" + viewName + "[0]";
+                            px = px + "/" + viewName + "[0]";
                         }
 
                         String id = ViewUtils.getIdName(childView, hasUserId);
@@ -143,44 +213,53 @@ public class ViewHelper {
                                 hasUserId = true;
                             }
 
-                            path.append("#").append(id);
+                            opx = opx + "#" + id;
+                            px = px + "#" + id;
                         }
-                    } else {
-                        path.append("/").append(viewName);
                     }
 
                     if (!(childView instanceof ViewGroup)) {
                         break;
                     }
 
-                    viewGroup = (ViewGroup) childView;
+                    parentView = (ViewGroup) childView;
                 }
             }
 
             String pageName;
+            String pageTitle;
             int displayId = ViewUtils.getDisplayId(view);
             if (ViewUtils.isMainDisplay(view.getContext(), displayId)) {
-                pageName = Navigator.getPageName();
-                if (TextUtils.isEmpty(pageName)) {
-                    pageName = activity.getClass().getName();
+                // 读取fragment信息
+                Object fragment = Navigator.getFragmentByView(view);
+                if (null != fragment) {
+                    pageName = fragment.getClass().getName();
+                    pageTitle = PageUtils.getTitle(fragment);
+                } else {
+                    pageName =
+                            null != activity
+                                    ? activity.getClass().getName()
+                                    : Navigator.getPageName();
+                    pageTitle = PageUtils.getTitle(activity);
                 }
             } else {
                 pageName = Navigator.getPresentationPageName(displayId);
+                pageTitle = PageUtils.getTitle(activity);
             }
             int width = view.getWidth();
             int height = view.getHeight();
             return new Click(
                     pageName,
-                    PageUtils.getTitle(activity),
-                    path.toString(),
+                    pageTitle,
+                    px,
                     WidgetUtils.getId(view),
                     WidgetUtils.getType(view),
                     width,
                     height,
                     width / 2,
                     height / 2,
-                    ViewUtils.getViewContent(view),
-                    positionList);
+                    ViewUtils.getViewContent(view, bannerText),
+                    listPositions);
         }
         return null;
     }
@@ -189,7 +268,7 @@ public class ViewHelper {
     public static boolean isViewSelfVisible(View mView) {
         if (mView == null) {
             return false;
-        } else if (WindowUtils.isDecorView(mView)) {
+        } else if (WindowHelper.isDecorView(mView)) {
             return true;
         } else if ((mView.getWidth() <= 0 || mView.getHeight() <= 0 || mView.getAlpha() <= 0.0F)
                 || !mView.getLocalVisibleRect(new Rect())) {
@@ -226,26 +305,29 @@ public class ViewHelper {
 
     @RequiresApi(api = 11)
     private static int getChildAdapterPositionInRecyclerView(View childView, ViewGroup parentView) {
-        if (ClassHelper.isAndroidXRecyclerView(parentView)) {
+        if (ClassHelper.instanceOfAndroidXRecyclerView(parentView)) {
             return ((RecyclerView) parentView).getChildAdapterPosition(childView);
-        } else if (ClassHelper.isSupportRecyclerView(parentView)) {
+        } else if (ClassHelper.instanceOfSupportRecyclerView(parentView)) {
             try {
-                return ((android.support.v7.widget.RecyclerView) parentView)
-                        .getChildAdapterPosition(childView);
+                Method method = childView.getClass().getMethod("getChildAdapterPosition");
+                return (int) method.invoke(childView);
             } catch (Throwable var3) {
-                return ((android.support.v7.widget.RecyclerView) parentView)
-                        .getChildPosition(childView);
+                try {
+                    Method method = childView.getClass().getMethod("getChildPosition");
+                    return (int) method.invoke(childView);
+                } catch (Throwable e) {
+                    return -1;
+                }
             }
         } else {
-            return ClassHelper.sCustomRecyclerView
-                    ? ClassHelper.invokeCustomGetChildAdapterPositionMethod(parentView, childView)
+            return ClassHelper.sHasCustomRecyclerView
+                    ? ClassHelper.invokeCRVGetChildAdapterPositionMethod(parentView, childView)
                     : -1;
         }
     }
 
-    private static View findMenuItemView(View view, MenuItem item)
-            throws InvocationTargetException, IllegalAccessException {
-        if (WindowUtils.getMenuItemData(view) == item) {
+    private static View findMenuItemView(View view, MenuItem item) {
+        if (WindowHelper.getMenuItemData(view) == item) {
             return view;
         } else {
             if (view instanceof ViewGroup) {

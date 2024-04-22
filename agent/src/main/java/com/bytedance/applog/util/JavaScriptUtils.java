@@ -1,12 +1,14 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.util;
 
-import android.support.annotation.Nullable;
 import android.view.View;
+
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONObject;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 
 /**
  * @author chenguanzhong
@@ -20,12 +22,15 @@ public class JavaScriptUtils {
      * @param jsonString json字符串
      * @return JSONObject 出错为null
      */
-    @Nullable
-    public static JSONObject jsObjectStrToJson(@Nullable String jsonString) {
+    public static JSONObject jsObjectStrToJson(String jsonString) {
+        if (Utils.isEmpty(jsonString)) {
+            return null;
+        }
         try {
             return new JSONObject(jsonString);
-        } catch (Throwable ignored) {
-            TLog.e("wrong Json format, return null pointer", null);
+        } catch (Throwable e) {
+            LoggerImpl.global()
+                    .error(Collections.singletonList("JavaScriptUtils"), "JSON handle failed", e);
             return null;
         }
     }
@@ -47,7 +52,11 @@ public class JavaScriptUtils {
             Method method = clazz.getMethod("addJavascriptInterface", Object.class, String.class);
             method.invoke(view, bridge, name);
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(
+                            Collections.singletonList("JavaScriptUtils"),
+                            "addJavascriptInterface failed",
+                            e);
         }
     }
 }

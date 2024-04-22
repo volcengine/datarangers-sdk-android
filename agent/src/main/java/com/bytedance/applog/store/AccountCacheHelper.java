@@ -7,8 +7,9 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.text.TextUtils;
 
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.AppLogInstance;
 
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -21,8 +22,10 @@ public class AccountCacheHelper extends CacheHelper {
     private final AccountManager mAccountManager;
     private Account mAccount;
     private final ConcurrentHashMap<String, String> mCache = new ConcurrentHashMap<>();
+    private final AppLogInstance appLogInstance;
 
-    public AccountCacheHelper(Context context) {
+    public AccountCacheHelper(AppLogInstance appLogInstance, Context context) {
+        this.appLogInstance = appLogInstance;
         mAccountManager = AccountManager.get(context);
     }
 
@@ -39,7 +42,12 @@ public class AccountCacheHelper extends CacheHelper {
         try {
             mAccountManager.setUserData(mAccount, key, value);
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance
+                    .getLogger()
+                    .error(
+                            Collections.singletonList("AccountCacheHelper"),
+                            "Set user data failed",
+                            e);
         }
     }
 
@@ -52,7 +60,12 @@ public class AccountCacheHelper extends CacheHelper {
         try {
             return mAccountManager.getUserData(mAccount, key);
         } catch (Throwable e) {
-            TLog.e(e);
+            appLogInstance
+                    .getLogger()
+                    .error(
+                            Collections.singletonList("AccountCacheHelper"),
+                            "Get user data failed",
+                            e);
         }
         return null;
     }
@@ -97,7 +110,12 @@ public class AccountCacheHelper extends CacheHelper {
                                 }
                                 mCache.clear();
                             } catch (Throwable e) {
-                                TLog.e(e);
+                                appLogInstance
+                                        .getLogger()
+                                        .error(
+                                                Collections.singletonList("AccountCacheHelper"),
+                                                "Set account failed",
+                                                e);
                             }
                         }
                     });

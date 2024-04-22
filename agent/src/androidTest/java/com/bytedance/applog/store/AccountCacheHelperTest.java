@@ -1,26 +1,31 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.store;
 
-import android.accounts.Account;
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
-import com.bytedance.applog.BaseAppLogTest;
-import org.junit.*;
-import org.junit.runner.*;
 
-/**
- * Created by lixiao on 2020/8/20.
- */
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+import com.bytedance.applog.AppLog;
+import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.BaseAppLogTest;
+
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public class AccountCacheHelperTest extends BaseAppLogTest {
     AccountCacheHelper mAccountCacheHelper;
+
     @Before
     public void setUp() {
-        Context appContext = InstrumentationRegistry.getTargetContext();
-        mAccountCacheHelper = new AccountCacheHelper(appContext);
+        Context appContext = ApplicationProvider.getApplicationContext();
+        mAccountCacheHelper =
+                new AccountCacheHelper((AppLogInstance) AppLog.getInstance(), appContext);
     }
+
     @Test
     public void cacheString() throws Exception {
         mAccountCacheHelper.cacheString("test", "test");

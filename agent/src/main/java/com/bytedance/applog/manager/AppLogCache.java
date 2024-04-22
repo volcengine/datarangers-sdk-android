@@ -1,6 +1,8 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.manager;
 
+import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.engine.Session;
 import com.bytedance.applog.store.BaseData;
 
 import java.util.ArrayList;
@@ -39,10 +41,13 @@ public class AppLogCache {
         }
     }
 
-    public int dumpData(ArrayList<BaseData> data) {
+    public int dumpData(ArrayList<BaseData> data, AppLogInstance appLog, Session session) {
         synchronized (sDatas) {
             int size = sDatas.size();
-            data.addAll(sDatas);
+            for (BaseData event : sDatas) {
+                session.process(appLog, event, data);
+                data.add(event);
+            }
             sDatas.clear();
             return size;
         }

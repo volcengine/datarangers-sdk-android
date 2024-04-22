@@ -14,6 +14,8 @@ public class CongestionController {
      */
     private String mPrefix;
 
+    private static final int MAX_REQUEST_FREQUENCY_DEFAULT = 10;
+
     /**
      * 二维数组每一列含义：
      * col 0: 当前级别最大时间间隔
@@ -21,7 +23,7 @@ public class CongestionController {
      * col 2: 当前级别最大时间间隔内允许的发送的次数
      */
     protected static final long[][] TABLE_INTERVAL_COUNT = {
-            {2 * 60 * 1000L, 0, 12}, // 默认频率2分钟发送12次，平均10s间隔
+            {60 * 1000L, 0, MAX_REQUEST_FREQUENCY_DEFAULT}, // 默认频率 1 分钟最多发送 10 次，平均 10s 间隔
             {2 * 60 * 1000L, 5, 1},
             {4 * 60 * 1000L, 5, 1},
             {8 * 60 * 1000L, 4, 1},

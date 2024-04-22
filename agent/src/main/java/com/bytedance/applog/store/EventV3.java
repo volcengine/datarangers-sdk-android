@@ -8,9 +8,9 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 
 import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.log.LogInfo;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.NetworkUtils;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -41,6 +41,11 @@ public class EventV3 extends BaseData {
 
     public EventV3(final String event) {
         this.event = event;
+    }
+
+    public EventV3(final String event, boolean bav) {
+        this.event = event;
+        this.bav = bav;
     }
 
     public EventV3(final String event, JSONObject properties) {
@@ -99,7 +104,7 @@ public class EventV3 extends BaseData {
             try {
                 fillParam();
             } catch (Throwable e) {
-                TLog.ysnp(e);
+                getLogger().error(LogInfo.Category.EVENT, loggerTags, "Fill params failed", e);
             }
         }
         cv.put(COL_PARAM, param);
@@ -127,6 +132,9 @@ public class EventV3 extends BaseData {
             obj.put(COL_UID, uid);
         }
         obj.put(COL_UUID, TextUtils.isEmpty(uuid) ? JSONObject.NULL : uuid);
+        if (!TextUtils.isEmpty(uuidType)) {
+            obj.put(Api.KEY_USER_UNIQUE_ID_TYPE_NEW, uuidType);
+        }
         if (!TextUtils.isEmpty(ssid)) {
             obj.put(COL_SSID, ssid);
         }

@@ -2,9 +2,10 @@
 package com.bytedance.applog.util;
 
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import android.text.TextUtils;
+
+import com.bytedance.applog.log.LoggerImpl;
 
 import java.lang.reflect.Method;
 import java.util.Locale;
@@ -140,10 +141,25 @@ public class RomUtils {
     }
 
     public static boolean isHonorDevice() {
-        return !TextUtils.isEmpty(Build.BRAND) && Build.BRAND.toLowerCase().startsWith("honor")
-                || !TextUtils.isEmpty(Build.MANUFACTURER)
-                        && Build.MANUFACTURER.toLowerCase().startsWith("honor");
+        return (!TextUtils.isEmpty(Build.BRAND) && Build.BRAND.toLowerCase().startsWith("honor")) ||
+                (!TextUtils.isEmpty(Build.MANUFACTURER) && Build.MANUFACTURER.toLowerCase().startsWith("honor"));
     }
+
+    public static boolean hasHWVersion() {
+        try {
+            Class<?> aClass = Class.forName("android.os.SystemProperties");
+            Method method = aClass.getDeclaredMethod("get", String.class);
+            String isEmotionOs = (String) method.invoke(aClass, "ro.build.version.emui");
+            if (!TextUtils.isEmpty(isEmotionOs)) {
+                LoggerImpl.global().debug("Honor# oldHonor device, version is" + isEmotionOs);
+                return true;
+            }
+        } catch (Exception e) {
+            LoggerImpl.global().error("Honor# " + e.getMessage() , e);
+        }
+        return false;
+    }
+
 
     public static boolean isMiui() {
         try {
@@ -225,19 +241,6 @@ public class RomUtils {
             return value;
         }
         return Utils.getSysPropByExec(propName);
-    }
-
-    private static boolean isInstalledApp(Context context, final String packageName) {
-        boolean installed = false;
-        if (null != context && !TextUtils.isEmpty(packageName)) {
-            PackageManager pm = context.getPackageManager();
-            try {
-                if (pm.getPackageInfo(packageName, 0) != null) installed = true;
-            } catch (Throwable e) {
-                // do nothing.
-            }
-        }
-        return installed;
     }
 
     public static boolean isMeizu() {

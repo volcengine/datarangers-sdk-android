@@ -10,13 +10,14 @@ import android.view.WindowManager;
 import android.webkit.WebView;
 
 import com.bytedance.applog.IAppLogInstance;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LoggerImpl;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,7 +83,11 @@ public class WebInfoParser {
                 webInfoModel.setInfo(infoList);
                 return webInfoModel;
             } catch (JSONException e) {
-                TLog.e(e);
+                LoggerImpl.global()
+                        .error(
+                                Collections.singletonList("WebInfoParser"),
+                                "WebInfoModel parse failed",
+                                e);
             }
         }
         return null;
@@ -103,14 +108,18 @@ public class WebInfoParser {
         String elementPathV2 = info.optString("element_path");
         JSONArray positions = info.optJSONArray("positions");
         List<String> positionList = new ArrayList<>();
-        for (int i = 0; i < positions.length(); i++) {
-            positionList.add(positions.optString(i));
+        if (positions != null) {
+            for (int i = 0; i < positions.length(); i++) {
+                positionList.add(positions.optString(i));
+            }
         }
         int zIndex = info.optInt("zIndex");
         JSONArray texts = info.optJSONArray("texts");
         List<String> textList = new ArrayList<>();
-        for (int i = 0; i < texts.length(); i++) {
-            textList.add(texts.optString(i));
+        if (texts != null) {
+            for (int i = 0; i < texts.length(); i++) {
+                textList.add(texts.optString(i));
+            }
         }
 
         String href = info.optString("href");
@@ -169,7 +178,11 @@ public class WebInfoParser {
                 }
                 return displayMetrics.widthPixels;
             } catch (Throwable e) {
-                TLog.ysnp(e);
+                LoggerImpl.global()
+                        .error(
+                                Collections.singletonList("WebInfoParser"),
+                                "getScreenWidth failed",
+                                e);
             }
         }
         return 0;

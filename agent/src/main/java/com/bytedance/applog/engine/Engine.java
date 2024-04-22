@@ -15,33 +15,38 @@ import androidx.annotation.NonNull;
 
 import com.bytedance.applog.AppLogHelper;
 import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.IPullAbTestConfigCallback;
 import com.bytedance.applog.InitConfig;
 import com.bytedance.applog.UriConfig;
 import com.bytedance.applog.alink.ALinkManager;
 import com.bytedance.applog.collector.Collector;
 import com.bytedance.applog.collector.Navigator;
+import com.bytedance.applog.concurrent.TTExecutors;
 import com.bytedance.applog.filter.AbstractEventFilter;
+import com.bytedance.applog.log.EventBus;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.AppLogCache;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.manager.DeviceManager;
-import com.bytedance.applog.monitor.IMonitor;
-import com.bytedance.applog.monitor.MonitorImpl;
+import com.bytedance.applog.network.RangersHttpTimeoutException;
+import com.bytedance.applog.oneid.IDBindCallback;
+import com.bytedance.applog.oneid.OneIDManager;
 import com.bytedance.applog.profile.ProfileController;
 import com.bytedance.applog.profile.UserProfileCallback;
 import com.bytedance.applog.profile.UserProfileHelper;
 import com.bytedance.applog.server.Api;
 import com.bytedance.applog.store.BaseData;
+import com.bytedance.applog.store.CustomEvent;
 import com.bytedance.applog.store.DbStoreV2;
 import com.bytedance.applog.store.EventV3;
 import com.bytedance.applog.store.Launch;
+import com.bytedance.applog.store.PackV2;
 import com.bytedance.applog.store.Page;
 import com.bytedance.applog.store.Profile;
 import com.bytedance.applog.util.PrivateAgreement;
 import com.bytedance.applog.util.ReflectUtils;
-import com.bytedance.applog.util.TLog;
 import com.bytedance.applog.util.Utils;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.lang.reflect.Constructor;
@@ -50,6 +55,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -64,23 +70,29 @@ public class Engine implements Callback, Comparator<BaseData> {
     private static final int MSG_PROCESS = 4;
     private static final int MSG_CHECK_WORKER = 6;
     private static final int MSG_TERM = 7;
-    private static final int MSG_REAL_TIME = 8;
+    private static final int MSG_SAVE_REAL_TIME = 8;
     private static final int MSG_SEND_DOM = 9;
     private static final int MSG_PROCESS_CACHE = 10;
-    private static final int MSG_ACTIVE = 11;
     private static final int MSG_SET_UUID = 12;
     private static final int MSG_CHECK_AB_CONFIG = 13;
     private static final int MSG_SEND_IMMEDIATELY = 14;
     private static final int MSG_RANGERS_EVENT_VERIFY = 15;
     private static final int MSG_SEND_RANGERS_EVENT_VERIFY = 16;
-    private static final long REAL_FAIL_INTERVAL = 15 * 60 * 1000;
-    /** 每累积INTERVAL_PROCESS个数据，强制process一次。 */
+    private static final int MSG_PULL_ABCONFIG = 18;
+    private static final long REAL_FAIL_INTERVAL = 60 * 1000;
+    /**
+     * 每累积INTERVAL_PROCESS个数据，强制process一次。
+     */
     private static final int INTERVAL_PROCESS = 10;
 
     public static final long TIME_CHECK_INTERVAL = 5 * 1000;
 
-    private AppLogInstance mAppLogInst;
-    private ConfigManager mConfig;
+    /**
+     * 拉取ab实验配置的频控时间间隔
+     */
+    private long mPullAbTestConfigsThrottleMills = 10 * 1000L;
+    private final AppLogInstance mAppLogInst;
+    private final ConfigManager mConfig;
     private Configure mConfigure;
     private final ArrayList<BaseData> mDataList = new ArrayList<>(32);
     private volatile DbStoreV2 mDbStoreV2;
@@ -92,7 +104,6 @@ public class Engine implements Callback, Comparator<BaseData> {
     private final Session mSession;
     private UriConfig mUriConfig;
     private final Handler mWorkHandler;
-    private IMonitor monitor;
     private volatile boolean mStarted;
     private BaseWorker mDomSender;
     private volatile RangersEventVerifyHeartBeater mRangersEventVerifyHeartBeater;
@@ -106,8 +117,16 @@ public class Engine implements Callback, Comparator<BaseData> {
     private final ALinkManager aLinkManager;
     /** 缓存对象 */
     private final AppLogCache appLogCache;
+    private long mRealFailTs;
 
-    abstract class AbsDelayedTask<T> {
+    /**
+     * 生命钩子
+     */
+    private final LifeHook lifeHook;
+
+    private final OneIDManager oneIdManager;
+
+    abstract static class AbsDelayedTask<T> {
         protected T mParam;
 
         AbsDelayedTask(T param) {
@@ -153,24 +172,12 @@ public class Engine implements Callback, Comparator<BaseData> {
         mDevice = dm;
         appLogCache = cache;
         mSession = new Session(this);
+        lifeHook = new LifeHookImpl(this);
 
         HandlerThread ht = new HandlerThread("bd_tracker_w:" + app.getAppId());
         ht.start();
         mWorkHandler = new Handler(ht.getLooper(), this);
         aLinkManager = new ALinkManager(this);
-
-        boolean isFirstLaunch = mConfig.isFirstAppLaunch();
-        String uuid = mConfig.getInitConfig().getUserUniqueId();
-        String uuidType = mConfig.getInitConfig().getUserUniqueIdType();
-        if (Utils.isNotEmpty(uuid) && isFirstLaunch) {
-            mDevice.setUserUniqueId(uuid);
-        }
-        if (Utils.isNotEmpty(uuidType) && isFirstLaunch) {
-            mDevice.setUserUniqueIdType(uuidType);
-        }
-        if (isFirstLaunch) {
-            mConfig.setFirstAppLaunch(false);
-        }
         if (mConfig.isDeferredALinkEnable()) {
             mAppLogInst.addDataObserver(aLinkManager);
         }
@@ -184,20 +191,30 @@ public class Engine implements Callback, Comparator<BaseData> {
         if (mConfig.getInitConfig().getIpcDataChecker() != null && !mConfig.isMainProcess()) {
             this.mIpcDataChecker = mConfig.getInitConfig().getIpcDataChecker();
         }
-        if (mConfig.isMonitorEnabled()) {
-            monitor = new MonitorImpl(this);
-        }
 
         mWorkHandler.sendEmptyMessage(MSG_PROCESS_CACHE);
 
         if (mConfig.autoStart()) {
-            mStarted = true;
-            mWorkHandler.sendEmptyMessage(MSG_BG_START);
+            startInner();
         }
+
+        oneIdManager = new OneIDManager(this);
+    }
+
+    public LifeHook getLifeHook() {
+        return lifeHook;
     }
 
     public Context getContext() {
         return getAppLog().getContext();
+    }
+
+    public void setPullAbTestConfigsThrottleMills(Long mills) {
+        mPullAbTestConfigsThrottleMills = null != mills && mills > 0L ? mills : 0L;
+    }
+
+    public long getPullAbTestConfigsThrottleMills() {
+        return mPullAbTestConfigsThrottleMills;
     }
 
     /** 初始化DB耗时较大，所以用懒加载方式 */
@@ -216,15 +233,6 @@ public class Engine implements Callback, Comparator<BaseData> {
 
     public DeviceManager getDm() {
         return mDevice;
-    }
-
-    /** 禁用内部监控 */
-    public void disableMonitor() {
-        monitor = null;
-    }
-
-    public IMonitor getMonitor() {
-        return monitor;
     }
 
     public void setLanguageAndRegion(final String language, final String region) {
@@ -250,12 +258,21 @@ public class Engine implements Callback, Comparator<BaseData> {
 
     public void start() {
         if (!mStarted) {
-            mStarted = true;
-            mWorkHandler.sendEmptyMessage(MSG_BG_START);
+            startInner();
         }
     }
 
-    /** 立即发送日志 */
+    /**
+     * SDK Start
+     */
+    private void startInner() {
+        mStarted = true;
+        mWorkHandler.sendEmptyMessage(MSG_BG_START);
+    }
+
+    /**
+     * 立即发送日志
+     */
     public void sendLogImmediately() {
         workImmediately(mSender);
     }
@@ -264,12 +281,12 @@ public class Engine implements Callback, Comparator<BaseData> {
     public boolean handleMessage(final Message msg) {
         switch (msg.what) {
             case MSG_BG_START:
-                String appId = getAppLog().getAppId();
-                TLog.i("AppLog@{} is starting...", appId);
+                getAppLog().getLogger().info("AppLog is starting...");
                 mConfig.setEnableBav(mConfig.isBavEnable());
                 if (mDevice.load()) {
                     if (mConfig.isMainProcess()) {
-                        HandlerThread nt = new HandlerThread("bd_tracker_n:" + appId);
+                        HandlerThread nt =
+                                new HandlerThread("bd_tracker_n:" + getAppLog().getAppId());
                         nt.start();
                         mNetHandler = new Handler(nt.getLooper(), this);
                         mNetHandler.sendEmptyMessage(MSG_WORK_START);
@@ -278,28 +295,41 @@ public class Engine implements Callback, Comparator<BaseData> {
                             mWorkHandler.sendEmptyMessageDelayed(MSG_PROCESS, 1000);
                         }
                         PrivateAgreement.setAccepted(getAppLog().getContext());
-                        TLog.i("AppLog@{} started on main process.", appId);
+                        getAppLog().getLogger().info("AppLog started on main process.");
                     } else {
-                        TLog.i("AppLog@{} started on secondary process.", appId);
+                        getAppLog().getLogger().info("AppLog started on secondary process.");
                     }
+
+                    LogUtils.sendJsonFetcher(
+                            "start_end",
+                            new EventBus.DataFetcher() {
+                                @Override
+                                public Object fetch() {
+                                    JSONObject data = new JSONObject();
+                                    try {
+                                        data.put("appId", mAppLogInst.getAppId());
+                                        data.put("isMainProcess", mConfig.isMainProcess());
+                                    } catch (Throwable ignored) {
+
+                                    }
+                                    return data;
+                                }
+                            });
                 } else {
-                    TLog.i(
-                            "AppLog@{} is not ready, will try start again after 1 second...",
-                            getAppLog().getAppId());
+                    getAppLog()
+                            .getLogger()
+                            .info("AppLog is not ready, will try start again after 1 second...");
                     mWorkHandler.removeMessages(MSG_BG_START);
                     mWorkHandler.sendEmptyMessageDelayed(MSG_BG_START, 1000);
                 }
                 break;
-
             case MSG_WORK_START:
                 mRegister = new Register(this);
                 mWorkers.add(mRegister);
 
                 // 开启事件上报后再初始化mSender，默认开启
-                final boolean trackEventDisabled =
-                        null != mConfig
-                                && null != mConfig.getInitConfig()
-                                && !mConfig.getInitConfig().isTrackEventEnabled();
+                final boolean trackEventDisabled = null != mConfig.getInitConfig()
+                        && !mConfig.getInitConfig().isTrackEventEnabled();
                 if (!trackEventDisabled) {
                     mSender = new Sender(this);
                     mWorkers.add(mSender);
@@ -319,11 +349,6 @@ public class Engine implements Callback, Comparator<BaseData> {
 
                 mNetHandler.removeMessages(MSG_CHECK_WORKER);
                 mNetHandler.sendEmptyMessage(MSG_CHECK_WORKER);
-
-                // 上报trace
-                if (null != getMonitor()) {
-                    getMonitor().report();
-                }
                 break;
             case MSG_CHECK_WORKER:
                 mNetHandler.removeMessages(MSG_CHECK_WORKER);
@@ -331,7 +356,7 @@ public class Engine implements Callback, Comparator<BaseData> {
                 long delay = TIME_CHECK_INTERVAL;
                 if (!getAppLog().isPrivacyMode()
                         && (!mConfig.getInitConfig().isSilenceInBackground()
-                                || mSession.isResume())) {
+                        || mSession.isResume())) {
                     long nextTime = Long.MAX_VALUE;
                     for (BaseWorker worker : mWorkers) {
                         if (!worker.isStop()) {
@@ -371,7 +396,7 @@ public class Engine implements Callback, Comparator<BaseData> {
                 break;
             case MSG_PROCESS_CACHE:
                 synchronized (mDataList) {
-                    appLogCache.dumpData(mDataList);
+                    appLogCache.dumpData(mDataList, getAppLog(), getSession());
                 }
                 process(appLogCache.getArray(), false);
                 break;
@@ -384,19 +409,23 @@ public class Engine implements Callback, Comparator<BaseData> {
                 }
                 process(null, false);
                 break;
+            case MSG_SAVE_REAL_TIME:
+                ArrayList<BaseData> datas = (ArrayList<BaseData>) msg.obj;
+                getDbStoreV2().saveAll(datas);
+                break;
             case MSG_SET_UUID:
                 String newUuid = null != msg.obj ? msg.obj.toString() : null;
                 registerNewUuid(newUuid);
                 break;
             case MSG_CHECK_AB_CONFIG:
-                if (mConfig.isAbEnable()
-                        && mConfig.getInitConfig().isAbEnable()
-                        && !TextUtils.isEmpty(getUriConfig().getAbUri())) {
+                if (isAbEnabled()) {
                     if (mAbConfigure == null) {
                         mAbConfigure = new AbConfigure(this);
-                        mWorkers.add(mAbConfigure);
-                        workImmediately(mAbConfigure);
                     }
+                    if (!mWorkers.contains(mAbConfigure)) {
+                        mWorkers.add(mAbConfigure);
+                    }
+                    workImmediately(mAbConfigure);
                 } else {
                     if (mAbConfigure != null) {
                         mAbConfigure.setStop(true);
@@ -417,8 +446,15 @@ public class Engine implements Callback, Comparator<BaseData> {
                 BaseData data = (BaseData) msg.obj;
                 sendToRangersEventVerify(data);
                 break;
+            case MSG_PULL_ABCONFIG:
+                if (msg.obj instanceof IPullAbTestConfigCallback) {
+                    doFetchAbConfig(msg.arg1, (IPullAbTestConfigCallback) msg.obj);
+                } else {
+                    workAbConfiger();
+                }
+                break;
             default:
-                TLog.ysnp(null);
+                getAppLog().getLogger().error("Unknown handler message type");
         }
         return true;
     }
@@ -430,11 +466,21 @@ public class Engine implements Callback, Comparator<BaseData> {
         }
     }
 
-    void checkAbConfiger() {
+    public void checkAbConfiger() {
         mNetHandler.removeMessages(MSG_CHECK_AB_CONFIG);
         mNetHandler.sendEmptyMessage(MSG_CHECK_AB_CONFIG);
     }
 
+    public void pullAbTestConfigs(int timeout, IPullAbTestConfigCallback callback) {
+        mWorkHandler.sendMessage(
+                mWorkHandler.obtainMessage(MSG_PULL_ABCONFIG, timeout, -1, callback));
+    }
+
+    /**
+     * 开启热力图
+     *
+     * @param cookie cookie
+     */
     public void startSimulator(String cookie) {
         if (mDomSender != null) {
             mDomSender.setStop(true);
@@ -444,13 +490,10 @@ public class Engine implements Callback, Comparator<BaseData> {
             try {
                 // 为了解包,即base包不含picker相关,这里DomSender采用反射的方式创建
                 Constructor<?> constructor = clz.getConstructor(Engine.class, String.class);
-                HandlerThread handlerThread =
-                        new HandlerThread("bd_tracker_d_" + getAppLog().getAppId());
-                handlerThread.start();
                 mDomSender = (BaseWorker) constructor.newInstance(this, cookie);
                 mNetHandler.sendMessage(mNetHandler.obtainMessage(MSG_SEND_DOM, mDomSender));
-            } catch (Exception e) {
-                TLog.ysnp(e);
+            } catch (Throwable e) {
+                getAppLog().getLogger().error("Start simulator failed.", e);
             }
         }
     }
@@ -463,10 +506,8 @@ public class Engine implements Callback, Comparator<BaseData> {
      */
     public void process(String[] strings, boolean isFlush) {
         // 埋点开关
-        final boolean trackDisabled =
-                null != mConfig
-                        && null != mConfig.getInitConfig()
-                        && !mConfig.getInitConfig().isTrackEventEnabled();
+        final boolean trackDisabled = null != mConfig.getInitConfig()
+                && !mConfig.getInitConfig().isTrackEventEnabled();
         // 不上报埋点事件场景
         // 1. privacy mode
         // 2. trackEventEnabled = false
@@ -483,12 +524,14 @@ public class Engine implements Callback, Comparator<BaseData> {
         if (strings != null) {
             datas.ensureCapacity(datas.size() + strings.length);
             for (String string : strings) {
-                datas.add(BaseData.fromIpc(string));
+                BaseData data = BaseData.fromIpc(string);
+                getSession().fillSessionParams(getAppLog(), data);
+                datas.add(data);
             }
         }
 
         filterEvent(datas);
-        boolean filterLoaded = mConfig.filterBlock(datas);
+        boolean filterLoaded = mConfig.filterBlockAndWhite(datas, this);
 
         if (datas.size() > 0) {
             if (mConfig.isMainProcess()) {
@@ -517,9 +560,8 @@ public class Engine implements Callback, Comparator<BaseData> {
                     try { // try catch for protecting the business exception
                         needSend = mIpcDataChecker.checkIpcData(strings);
                     } catch (Throwable e) {
-                        TLog.w("check ipc data", e);
+                        getAppLog().getLogger().warn("check ipc data", e);
                     }
-                    TLog.ysnp(null);
                 }
 
                 if (needSend) {
@@ -538,69 +580,70 @@ public class Engine implements Callback, Comparator<BaseData> {
         }
     }
 
-    private void saveAndSend(final ArrayList<BaseData> datas) {
-        Collections.sort(datas, this);
-        ArrayList<BaseData> saveData = new ArrayList<>(datas.size());
-        boolean hasPage = false;
-        boolean isResume = false;
-        boolean newSession = false;
-        for (BaseData data : datas) {
-            newSession |= mSession.process(getAppLog(), data, saveData);
-            if (data instanceof Page) {
-                hasPage = true;
-                isResume = Session.isResumeEvent(data);
-            }
-
-            // 记录pendingSsid标志
-            tagIfSsidInPending(data);
-
-            if (Looper.myLooper() == Looper.getMainLooper()) {
-                if (null != mNetHandler) {
-                    mNetHandler.obtainMessage(MSG_SEND_RANGERS_EVENT_VERIFY, data).sendToTarget();
-                }
-            } else {
-                sendToRangersEventVerify(data);
-            }
-        }
-
-        getDbStoreV2().saveAll(saveData);
-
-        if (hasPage) {
-            if (isResume) {
-                // 如果是resume，移除term
-                mWorkHandler.removeMessages(MSG_TERM);
-            } else {
-                // 如果是pause，delay30秒一个term，用来触发session切换
-                mWorkHandler.sendEmptyMessageDelayed(MSG_TERM, mConfig.getSessionLife());
-            }
-        }
-
-        if (newSession) {
-            sendLogImmediately();
-        }
+    public ConfigManager getConfig() {
+        return mConfig;
     }
 
+    public boolean isEnableBav() {
+        return getConfig().isEnableBavToB();
+    }
+
+    public boolean isResume() {
+        return mSession.isResume();
+    }
+
+    public void setRangersEventVerifyEnable(boolean enable, String cookie) {
+        mNetHandler.removeMessages(MSG_RANGERS_EVENT_VERIFY);
+        Message msg =
+                mNetHandler.obtainMessage(MSG_RANGERS_EVENT_VERIFY, new Object[]{enable, cookie});
+        msg.sendToTarget();
+    }
+
+    /**
+     * 发送埋点验证
+     *
+     * @param data BaseData
+     */
     public void sendToRangersEventVerify(BaseData data) {
-        RangersEventVerifyHeartBeater rangersEventVerifyHeartBeater =
-                mRangersEventVerifyHeartBeater;
-        if ((data instanceof EventV3 || data instanceof Profile)
-                && rangersEventVerifyHeartBeater != null) {
+        if (null == mRangersEventVerifyHeartBeater) {
+            return;
+        }
+        if (data instanceof EventV3
+                || (data instanceof Page && isEnableBav())
+                || data instanceof CustomEvent
+                || data instanceof Profile) {
+            JSONObject json = data.toPackJson();
+
+            if (data instanceof Page) {
+                if (!((Page) data).isResumeEvent()) {
+                    return;
+                }
+                JSONObject params = json.optJSONObject(BaseData.COL_PARAM);
+                if (null != params) {
+                    try {
+                        params.remove(Page.COL_DURATION);
+                        json.put(BaseData.COL_PARAM, params);
+                    } catch (Throwable ignored) {
+
+                    }
+                }
+            }
+
+            if (data instanceof CustomEvent) {
+                if (!json.has("event")) {
+                    try {
+                        json.put(
+                                "event",
+                                json.optString("log_type", ((CustomEvent) data).getCategory()));
+                    } catch (Throwable ignored) {
+
+                    }
+                }
+            }
+
             getAppLog()
                     .getApi()
-                    .sendToRangersEventVerify(
-                            data.toPackJson(), rangersEventVerifyHeartBeater.getCookie());
-        }
-    }
-
-    private void workImmediately(BaseWorker baseWorker) {
-        if (mNetHandler != null && baseWorker != null && !getAppLog().isPrivacyMode()) {
-            baseWorker.setImmediately();
-            if (Looper.myLooper() == mNetHandler.getLooper()) {
-                baseWorker.checkToWork();
-            } else {
-                mNetHandler.removeMessages(MSG_CHECK_WORKER);
-                mNetHandler.sendEmptyMessage(MSG_CHECK_WORKER);
-            }
+                    .sendToRangersEventVerify(json, mRangersEventVerifyHeartBeater.getCookie());
         }
     }
 
@@ -611,12 +654,13 @@ public class Engine implements Callback, Comparator<BaseData> {
      */
     public void receive(BaseData data) {
         if (data.ts == 0) {
-            TLog.ysnp(null);
+            getAppLog().getLogger().warn("Data ts is 0");
         }
         int size;
         synchronized (mDataList) {
             size = mDataList.size();
             mDataList.add(data);
+            getSession().process(getAppLog(), data, mDataList);
         }
         boolean isPage = data instanceof Page;
         if (size % INTERVAL_PROCESS == 0 || isPage) {
@@ -624,7 +668,7 @@ public class Engine implements Callback, Comparator<BaseData> {
             if (isPage || size != 0) {
                 mWorkHandler.sendEmptyMessage(MSG_PROCESS);
             } else {
-                mWorkHandler.sendEmptyMessageDelayed(MSG_PROCESS, 300);
+                mWorkHandler.sendEmptyMessageDelayed(MSG_PROCESS, 200);
             }
         }
     }
@@ -651,19 +695,120 @@ public class Engine implements Callback, Comparator<BaseData> {
         }
     }
 
-    public ConfigManager getConfig() {
-        return mConfig;
+    private void saveAndSend(final List<BaseData> datas) {
+        Collections.sort(datas, this);
+        List<BaseData> saveData = new ArrayList<>(datas.size());
+        boolean hasPage = false;
+        boolean isResume = false;
+        for (BaseData data : datas) {
+            getSession().addDataToList(data, saveData, getAppLog());
+            if (data instanceof Page) {
+                hasPage = true;
+                isResume = Session.isResumeEvent(data);
+            }
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                if (null != mNetHandler) {
+                    mNetHandler.obtainMessage(MSG_SEND_RANGERS_EVENT_VERIFY, data).sendToTarget();
+                }
+            } else {
+                sendToRangersEventVerify(data);
+            }
+
+            LogUtils.sendObject("event_process", data);
+        }
+
+        filterRealTimeEvent(saveData);
+
+        getDbStoreV2().saveAll(saveData);
+
+        if (hasPage && null != mWorkHandler) {
+            if (isResume) {
+                mWorkHandler.removeMessages(MSG_TERM);
+            } else {
+                mWorkHandler.sendEmptyMessageDelayed(MSG_TERM, mConfig.getSessionLife());
+            }
+        }
+
+        if (getSession().hasNewSession() || isTriggerEventSize()) {
+            sendLogImmediately();
+        }
     }
 
-    public boolean isEnableBav() {
-        return getConfig().isEnableBavToB();
+    private boolean isTriggerEventSize() {
+        int configTriggerEventSize = mConfig.getEventSize();
+        if (!mConfig.isValidEventSize(configTriggerEventSize)) {
+            return false;
+        }
+        int size = mDbStoreV2.queryAllEventV3ByUuid(getAppLog().getAppId());
+        return size >= configTriggerEventSize;
     }
 
-    public void setRangersEventVerifyEnable(boolean enable, String cookie) {
-        mNetHandler.removeMessages(MSG_RANGERS_EVENT_VERIFY);
-        Message msg =
-                mNetHandler.obtainMessage(MSG_RANGERS_EVENT_VERIFY, new Object[] {enable, cookie});
-        msg.sendToTarget();
+    private void filterRealTimeEvent(final List<BaseData> saveData) {
+        if (mDevice.isHeaderReady()
+                && System.currentTimeMillis() - mRealFailTs >= REAL_FAIL_INTERVAL) {
+            final List<BaseData> realData = mConfig.filterRealTime(saveData);
+            if (realData != null && realData.size() > 0) {
+                if (realData.size() <= PackV2.LIMIT_EVENT_COUNT) {
+                    sendRealTimeEvent(realData);
+                } else {
+                    int packCount = realData.size() / PackV2.LIMIT_EVENT_COUNT
+                            + ((realData.size() % PackV2.LIMIT_EVENT_COUNT == 0) ? 0 : 1);
+                    for (int i = 0; i < packCount; i++) {
+                        int start = i * PackV2.LIMIT_EVENT_COUNT;
+                        int end = Math.min(PackV2.LIMIT_EVENT_COUNT + start, realData.size());
+                        sendRealTimeEvent(realData.subList(start, end));
+                    }
+                }
+            }
+
+        }
+    }
+
+    /**
+     * 以 Pack 为单位发送数据
+     *
+     * @param realData 待发送的实时数据
+     */
+    private void sendRealTimeEvent(final List<BaseData> realData) {
+        TTExecutors.getNormalExecutor().execute(new Runnable() {
+            @Override
+            public void run() {
+                if (realData != null && realData.size() > 0) {
+                    PackV2 pack = new PackV2();
+                    pack.setHeader(mDevice.getHeader());
+                    pack.setAppId(getAppLog().getAppId());
+                    List<EventV3> v3List = new ArrayList<>();
+                    for (BaseData item : realData) {
+                        if (item instanceof EventV3) {
+                            v3List.add((EventV3) item);
+                        }
+                    }
+                    pack.setEventV3List(v3List);
+                    pack.reloadSsidFromEvent();
+                    pack.reloadUuidTypeFromEvent();
+                    pack.writePackToData();
+                    if (mSender.singlePackSend(pack)) {
+                        mRealFailTs = 0;
+                        getDbStoreV2().notifyEventV3Observer(realData);
+                    } else {
+                        mRealFailTs = System.currentTimeMillis();
+                        mWorkHandler.obtainMessage(MSG_SAVE_REAL_TIME, realData).sendToTarget();
+                    }
+                }
+            }
+        });
+    }
+
+    private void workImmediately(BaseWorker baseWorker) {
+        if (mNetHandler != null && baseWorker != null && !getAppLog().isPrivacyMode()) {
+            baseWorker.setImmediately();
+            if (Looper.myLooper() == mNetHandler.getLooper()) {
+                baseWorker.checkToWork();
+            } else {
+                mNetHandler.removeMessages(MSG_CHECK_WORKER);
+                mNetHandler.sendEmptyMessage(MSG_CHECK_WORKER);
+            }
+        }
     }
 
     private void doRangersEventVerify(boolean enable, String cookie) {
@@ -680,23 +825,26 @@ public class Engine implements Callback, Comparator<BaseData> {
         }
     }
 
-    /** 切换用户uuid */
+    /**
+     * 切换用户uuid
+     */
     public void setUserUniqueId(final String id, final String type) {
         String curUuid = mDevice.getUserUniqueId();
-        if (Utils.equals(id, curUuid)) {
+        String currUuidType = mDevice.getUserUniqueIdType();
+        if (Utils.equals(id, curUuid) && Utils.equals(type, currUuidType)) {
+            getAppLog().getLogger().debug("setUserUniqueId not change");
             return;
         }
-
-        // 处理已有的数据
-        process(null, false);
 
         List<BaseData> dataList = new ArrayList<>();
 
         long curTime = System.currentTimeMillis();
         Page page = Navigator.getCurPage();
 
+        boolean hasSession = Utils.isNotEmpty(mSession.getId());
+
         // 补充一个页面结束事件
-        if (page != null) {
+        if (hasSession && page != null) {
             page = (Page) page.clone();
             page.setAppId(getAppLog().getAppId());
             long duration = curTime - page.ts;
@@ -709,31 +857,41 @@ public class Engine implements Callback, Comparator<BaseData> {
 
         syncSetUuid(id, type);
 
-        // 构造一个页面进入事件
-        if (page != null) {
+        boolean hasCurrPage = true;
+        if (page == null) {
+            page = Navigator.getLastPage();
+            hasCurrPage = false;
+        }
+        if (hasSession && page != null) {
             page = (Page) page.clone();
             page.setTs(curTime + 1);
             page.duration = -1L;
             Launch launch = mSession.startSession(getAppLog(), page, dataList, true);
             launch.lastSession = mSession.getLastFgId();
-            mSession.fillSessionParams(getAppLog(), page);
-            dataList.add(page);
+            if (hasCurrPage) {
+                mSession.fillSessionParams(getAppLog(), page);
+                dataList.add(page);
+            }
         }
 
-        if (!dataList.isEmpty()) {
-            getDbStoreV2().saveAll(dataList);
+        for (BaseData baseData : dataList) {
+            receive(baseData);
         }
 
-        sendLogImmediately();
+        mWorkHandler.sendEmptyMessage(MSG_SEND_IMMEDIATELY);
     }
 
-    /** 同步设置uuid */
+    /**
+     * 同步设置uuid
+     */
     private void syncSetUuid(final String id, final String type) {
+        boolean isAnonymousUser = TextUtils.isEmpty(mDevice.getUserUniqueId());
         // 同步修改uuid和ssid
-        mDevice.setUserUniqueId(id, type);
+        mDevice.setUserUniqueId(id);
+        mDevice.setUserUniqueIdType(type);
         mDevice.setSsid("");
         mDevice.removeHeaderInfo(ALinkManager.TR_WEB_SSID);
-        if (getConfig().isClearABCacheOnUserChange()) {
+        if (getConfig().isClearABCacheOnUserChange() && !isAnonymousUser) {
             mDevice.setAbSdkVersion(null);
         }
         mUuidChanged = true;
@@ -747,22 +905,26 @@ public class Engine implements Callback, Comparator<BaseData> {
         }
     }
 
-    /** 注册新的用户ID */
+    /**
+     * 注册新的用户ID
+     */
     private void registerNewUuid(String uuid) {
         JSONObject newHeader = new JSONObject();
         Utils.copy(newHeader, mDevice.getHeader());
         try {
-            if (mRegister.doRegister(newHeader)) {
+            if (null != mRegister && mRegister.doRegister(newHeader)) {
                 if (Utils.isNotEmpty(uuid)) {
                     mConfig.setIsFirstTimeLaunch(1);
                 }
             }
-        } catch (JSONException e) {
-            e.printStackTrace();
+        } catch (Throwable e) {
+            getAppLog().getLogger().error("Register new uuid:{} failed", e, uuid);
         }
     }
 
-    /** 使用header重新注册后获取ssid信息 */
+    /**
+     * 使用header重新注册后获取ssid信息
+     */
     public String getSsidByRegister(JSONObject header) {
         JSONObject newHeader = new JSONObject();
         Utils.copy(newHeader, header);
@@ -791,16 +953,16 @@ public class Engine implements Callback, Comparator<BaseData> {
         if (hasSsid) {
             return true;
         }
-        TLog.d("Register to get ssid by temp header...");
+        getAppLog().getLogger().debug("Register to get ssid by temp header...");
         try {
             String ssid = getSsidByRegister(header);
             if (Utils.isNotEmpty(ssid)) {
-                TLog.d("Register to get ssid by header success.");
+                getAppLog().getLogger().debug("Register to get ssid by header success.");
                 header.put(Api.KEY_SSID, ssid);
                 return true;
             }
         } catch (Throwable e) {
-            TLog.e(e);
+            getAppLog().getLogger().error("JSON handle failed", e);
         }
         return false;
     }
@@ -848,7 +1010,24 @@ public class Engine implements Callback, Comparator<BaseData> {
         profileController.profileAppend(jsonObject);
     }
 
-    private void filterEvent(ArrayList<BaseData> eventList) {
+    public void onDeepLinked(final Uri uri) {
+        aLinkManager.onDeepLinked(uri);
+    }
+
+    /**
+     * 是否允许读取粘贴板
+     *
+     * @param enabled true: 允许
+     */
+    public void setClipboardEnabled(boolean enabled) {
+        aLinkManager.setClipboardEnabled(enabled);
+    }
+
+    public String getDeepLinkUrl() {
+        return aLinkManager.getDeepLinkUrl();
+    }
+
+    private void filterEvent(List<BaseData> eventList) {
         if (eventList.isEmpty()) {
             return;
         }
@@ -866,7 +1045,7 @@ public class Engine implements Callback, Comparator<BaseData> {
                 String eventName = eventV3.getEvent();
                 String eventParam = eventV3.getParam();
                 if (eventFilterFromClient != null
-                                && !eventFilterFromClient.filter(eventName, eventParam)
+                        && !eventFilterFromClient.filter(eventName, eventParam)
                         || eventFilter != null && !eventFilter.filter(eventName, eventParam)) {
                     dataIterator.remove();
                 }
@@ -877,8 +1056,7 @@ public class Engine implements Callback, Comparator<BaseData> {
     private void checkAppUpdate() {
         String spName =
                 AppLogHelper.getInstanceSpName(getAppLog(), AbstractEventFilter.SP_FILTER_NAME);
-        if (mDevice.getLastVersionCode() != mDevice.getVersionCode()
-                || !TextUtils.equals(mConfig.getLastChannel(), mConfig.getChannel())) {
+        if (isVersionCodeOrChannelUpdate()) {
             if (mRegister != null) {
                 mRegister.setImmediately();
             }
@@ -898,45 +1076,55 @@ public class Engine implements Callback, Comparator<BaseData> {
         }
     }
 
-    /** 深度链接激活行为 */
-    public void onDeepLinked(final Uri uri) {
-        aLinkManager.onDeepLinked(uri);
+    /**
+     * 如需判断是否更新，请在设备注册完成之前判断，否则设备注册成功后会更新 lastChannel 以及 lastVersionCode
+     *
+     * @return App 是否升级版本或者更新过 Channel
+     */
+    public boolean isVersionCodeOrChannelUpdate() {
+        return mDevice.getLastVersionCode() != mDevice.getVersionCode()
+                || !TextUtils.equals(mConfig.getLastChannel(), mConfig.getChannel());
+    }
+
+    private boolean isAbEnabled() {
+        return mConfig.isAbEnable()
+                && !TextUtils.isEmpty(getUriConfig().getAbUri());
     }
 
     /**
-     * 是否允许读取粘贴板
+     * 拉取AB实验
      *
-     * @param enabled true: 允许
+     * @param timeout  超时时间
+     * @param callback 回调
      */
-    public void setClipboardEnabled(boolean enabled) {
-        aLinkManager.setClipboardEnabled(enabled);
-    }
-
-    public String getDeepLinkUrl() {
-        return aLinkManager.getDeepLinkUrl();
-    }
-
-    /**
-     * 如果ssid正在获取中，打个标签applog_pending_ssid_uuid在param字段里面
-     *
-     * <p>TODO: 未来删除，临时用于统计uuid与ssid不一致问题
-     *
-     * @param data BaseData
-     */
-    private void tagIfSsidInPending(BaseData data) {
-        if (null == data || null == mRegister) {
+    private void doFetchAbConfig(int timeout, IPullAbTestConfigCallback callback) {
+        if (!isAbEnabled()) {
+            mAppLogInst.getLogger().warn("ABTest is not enabled");
             return;
         }
-        String pendingSsidUuid = mRegister.getToRegisterUuid();
-        if (!Utils.equals(data.uuid, pendingSsidUuid)) {
-            JSONObject params =
-                    null == data.getProperties() ? new JSONObject() : data.getProperties();
-            try {
-                params.put("applog_pending_ssid_uuid", pendingSsidUuid);
-                data.setProperties(params);
-            } catch (Throwable e) {
-                TLog.e(e);
-            }
+        if (null == mAbConfigure) {
+            mAbConfigure = new AbConfigure(this);
         }
+        AbConfigure configure = mAbConfigure;
+        try {
+            JSONObject config = configure.fetchAbConfig(timeout);
+            if (null != callback) callback.onRemoteConfig(config);
+        } catch (RangersHttpTimeoutException e) {
+            if (null != callback) callback.onTimeoutError();
+        }
+    }
+
+    /**
+     * 用户多口径，绑定 ID
+     *
+     * @param identities
+     * @param callback
+     */
+    public void bind(Map<String, String> identities, IDBindCallback callback) {
+        if (identities == null) {
+            mAppLogInst.getLogger().warn("BindID identities is null");
+            return;
+        }
+        oneIdManager.bind(identities, callback);
     }
 }

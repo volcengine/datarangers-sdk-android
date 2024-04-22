@@ -1,60 +1,41 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.network;
 
-import android.util.Pair;
+import org.json.JSONObject;
 
-import java.util.List;
 import java.util.Map;
 
 /**
  * @author linguoqing
  */
 public interface INetworkClient {
-    /**
-     * get接口，实现get请求
-     * @param url
-     * @param requestHeaders
-     * @return
-     * @throws Exception
-     */
-    String get(final String url, final Map<String, String> requestHeaders) throws RangersHttpException;
+
+    byte METHOD_GET = 0;
+    byte METHOD_POST = 1;
+    byte RESPONSE_TYPE_STRING = 0;
+    byte RESPONSE_TYPE_STREAM = 1;
 
     /**
-     * post接口，实现post请求
-     * @param url
-     * @param data
-     * @param requestHeaders
-     * @return
-     * @throws Exception
+     * 网络客户端接口
+     *
+     * @param method         INetworkClient.METHOD_GET | INetworkClient.METHOD_POST
+     * @param url            请求url
+     * @param body           请求原始body内容
+     * @param requestHeaders 请求头
+     * @param responseType   响应类型 INetworkClient.RESPONSE_TYPE_STREAM | INetworkClient
+     *                       .RESPONSE_TYPE_STRING
+     * @param encrypt        是否加密
+     * @param timeout        超时时长
+     * @return 响应的字节数组 可以转String或key iv解密
+     * @throws RangersHttpException
      */
-    String post(final String url, final byte[] data, final Map<String, String> requestHeaders) throws RangersHttpException;
-
-    /**
-     * 带contentType的post请求
-     * @param url
-     * @param bytes
-     * @param contentType
-     * @return
-     * @throws Exception
-     */
-    String post(String url, byte[] bytes, String contentType) throws RangersHttpException;
-
-    /**
-     * 带pair params的post请求
-     * @param url
-     * @param params
-     * @return
-     * @throws Exception
-     */
-    String post(String url, List<Pair<String, String>> params) throws RangersHttpException;
-
-    /**
-     * post method, return byte array
-     * @param url
-     * @param data
-     * @param requestHeaders
-     * @return
-     * @throws Exception
-     */
-    byte[] postStream(final String url, final byte[] data, final Map<String, String> requestHeaders) throws RangersHttpException;
+    byte[] execute(
+            final byte method,
+            final String url,
+            final JSONObject body,
+            final Map<String, String> requestHeaders,
+            final byte responseType,
+            final boolean encrypt,
+            final int timeout)
+            throws RangersHttpException;
 }

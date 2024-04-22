@@ -1,17 +1,19 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog.picker;
 
-import android.text.TextUtils;
-
 import com.bytedance.applog.AppLogInstance;
+import com.bytedance.applog.log.LoggerImpl;
+import com.bytedance.applog.network.INetworkClient;
 import com.bytedance.applog.network.RangersHttpException;
 import com.bytedance.applog.server.Api;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.util.EncryptUtils;
+import com.bytedance.applog.util.Utils;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
@@ -28,6 +30,7 @@ public class PickerApi extends Api {
     }
 
     public JSONObject uploadDom(
+            String urlHost,
             String aid,
             String appVersion,
             String cookie,
@@ -53,42 +56,37 @@ public class PickerApi extends Api {
                 header.put("height", domPageModelList.get(i).height);
             }
             request.put("extra", extra);
-        } catch (JSONException e) {
-            TLog.e(e);
+        } catch (Throwable e) {
+            LoggerImpl.global()
+                    .error(Collections.singletonList("PickerApi"), "Request handle failed", e);
         }
-        HashMap<String, String> header = getHeaders();
+        HashMap<String, String> header = EncryptUtils.putContentTypeHeader(new HashMap<String, String>(2), appLogInstance);
         header.put(KEY_COOKIES, cookie);
         String resp = null;
         try {
             resp =
-                    http(
-                            METHOD_POST,
-                            appLogInstance.getApi().getSchemeHost() + PATH_UPLOAD_DOM,
-                            header,
+                    new String(
                             appLogInstance
-                                    .getApi()
-                                    .getEncryptUtils()
-                                    .transformStrToByte(request.toString()));
+                                    .getNetClient()
+                                    .execute(
+                                            INetworkClient.METHOD_POST,
+                                            urlHost + PATH_UPLOAD_DOM,
+                                            request,
+                                            header,
+                                            INetworkClient.RESPONSE_TYPE_STRING,
+                                            true,
+                                            Api.HTTP_SHORT_TIMEOUT));
         } catch (RangersHttpException ignore) {
         }
-        if (TextUtils.isEmpty(resp)) {
+        if (Utils.isEmpty(resp)) {
             return null;
         }
         try {
             return new JSONObject(resp);
         } catch (JSONException e) {
-            TLog.ysnp(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("PickerApi"), "JSON handle failed", e);
         }
         return null;
-    }
-
-    private HashMap<String, String> getHeaders() {
-        HashMap<String, String> headers = new HashMap<>(2);
-        if (appLogInstance.getEncryptAndCompress()) {
-            headers.put("Content-Type", "application/octet-stream;tt-data=a");
-        } else {
-            headers.put("Content-Type", "application/json; charset=utf-8");
-        }
-        return headers;
     }
 }

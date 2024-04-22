@@ -3,6 +3,9 @@ package com.bytedance.applog.picker;
 
 import android.app.Application;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.bytedance.applog.IPicker;
 import com.bytedance.applog.InitConfig;
 
@@ -17,11 +20,12 @@ public class Picker implements IPicker {
     private String mMarqueeCookie;
 
     @Override
-    public void setMarqueeCookie(String cookie) {
+    public void setMarqueeCookie(@NonNull String cookie) {
         mMarqueeCookie = cookie;
     }
 
     @Override
+    @Nullable
     public String getMarqueeCookie() {
         return mMarqueeCookie;
     }

@@ -8,7 +8,8 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 
 import com.bytedance.applog.AppLogInstance;
-import com.bytedance.applog.util.TLog;
+import com.bytedance.applog.log.LogInfo;
+import com.bytedance.applog.server.Api;
 import com.bytedance.applog.util.Utils;
 
 import org.json.JSONException;
@@ -91,6 +92,9 @@ public class CustomEvent extends BaseData {
             obj.put(COL_UID, uid);
         }
         obj.put(COL_UUID, TextUtils.isEmpty(uuid) ? JSONObject.NULL : uuid);
+        if (!TextUtils.isEmpty(uuidType)) {
+            obj.put(Api.KEY_USER_UNIQUE_ID_TYPE_NEW, uuidType);
+        }
         if (!TextUtils.isEmpty(ssid)) {
             obj.put(COL_SSID, ssid);
         }
@@ -102,12 +106,12 @@ public class CustomEvent extends BaseData {
                     String key = iterator.next();
                     Object value = jsonObject.get(key);
                     if (obj.opt(key) != null) {
-                        TLog.w("自定义事件存在重复的key");
+                        getLogger().warn(LogInfo.Category.EVENT, loggerTags, "自定义事件存在重复的key");
                     }
                     obj.put(key, value);
                 }
             } catch (Exception e) {
-                TLog.e("解析事件参数失败", e);
+                getLogger().warn(LogInfo.Category.EVENT, loggerTags, "解析事件参数失败", e);
             }
         }
         return obj;
@@ -132,7 +136,7 @@ public class CustomEvent extends BaseData {
         return "param:" + param + " category:" + category;
     }
 
-    protected String getCategory() {
+    public String getCategory() {
         return category;
     }
 }

@@ -10,19 +10,21 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
 
-import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 
 import com.bytedance.applog.alink.IALinkListener;
+import com.bytedance.applog.event.EventBuilder;
 import com.bytedance.applog.event.IEventHandler;
 import com.bytedance.applog.exposure.ViewExposureManager;
+import com.bytedance.applog.log.LogUtils;
 import com.bytedance.applog.manager.ConfigManager;
 import com.bytedance.applog.network.INetworkClient;
+import com.bytedance.applog.oneid.IDBindCallback;
 import com.bytedance.applog.profile.UserProfileCallback;
 import com.bytedance.applog.store.AccountCacheHelper;
 import com.bytedance.applog.util.Assert;
-import com.bytedance.applog.util.TLog;
 
 import org.json.JSONObject;
 
@@ -54,11 +56,11 @@ public final class AppLog {
         return gAppLogInstance.getContext();
     }
 
-    public static void setAppContext(IAppContext appContext) {
+    public static void setAppContext(@NonNull IAppContext appContext) {
         gAppLogInstance.setAppContext(appContext);
     }
 
-    public static IAppContext getAppContext() {
+    @Nullable public static IAppContext getAppContext() {
         return gAppLogInstance.getAppContext();
     }
 
@@ -75,15 +77,14 @@ public final class AppLog {
      * 初始化，必须在第一个Activity启动之前调用。
      *
      * @param context context
-     * @param config  参考{@link InitConfig}
+     * @param config 参考{@link InitConfig}
      */
     public static void init(@NonNull final Context context, @NonNull final InitConfig config) {
         synchronized (AppLog.class) {
             if (Assert.f(
                     gAppLogInstanceInitialized,
                     "Default AppLog is initialized, please create another instance "
-                            + "by `AppLog.newInstance()`"
-                            + ".")) {
+                            + "by `AppLog.newInstance()`")) {
                 return;
             }
             gAppLogInstanceInitialized = true;
@@ -100,8 +101,8 @@ public final class AppLog {
     /**
      * 初始化，在Activity启动后调用。
      *
-     * @param context  context
-     * @param config   参考{@link InitConfig}
+     * @param context context
+     * @param config 参考{@link InitConfig}
      * @param activity 启动的activity
      */
     public static void init(
@@ -110,8 +111,7 @@ public final class AppLog {
             if (Assert.f(
                     gAppLogInstanceInitialized,
                     "Default AppLog is initialized, please create another instance "
-                            + "by `new AppLogInstance()`"
-                            + ".")) {
+                            + "by `new AppLogInstance()`")) {
                 return;
             }
             gAppLogInstanceInitialized = true;
@@ -136,6 +136,7 @@ public final class AppLog {
         return gAppLogInstance.hasStarted();
     }
 
+    @Nullable
     public static InitConfig getInitConfig() {
         return gAppLogInstance.getInitConfig();
     }
@@ -144,6 +145,7 @@ public final class AppLog {
      * 强制将内存的事件存储到DB中，同步执行 <br>
      * 当发生crash时，请调用此接口。
      */
+    @WorkerThread
     public static void flush() {
         gAppLogInstance.flush();
     }
@@ -166,11 +168,11 @@ public final class AppLog {
         gAppLogInstance.setUserID(id);
     }
 
-    public static void setAppLanguageAndRegion(String language, String region) {
+    public static void setAppLanguageAndRegion(@NonNull String language, @NonNull String region) {
         gAppLogInstance.setAppLanguageAndRegion(language, region);
     }
 
-    public static void setGoogleAid(String gaid) {
+    public static void setGoogleAid(@NonNull String gaid) {
         gAppLogInstance.setGoogleAid(gaid);
     }
 
@@ -184,11 +186,11 @@ public final class AppLog {
         gAppLogInstance.putCommonParams(context, params, isApi, level);
     }
 
-    public static void setUserUniqueID(final String id) {
+    public static void setUserUniqueID(@Nullable final String id) {
         gAppLogInstance.setUserUniqueID(id);
     }
 
-    public static void setUserUniqueID(final String id, final String type) {
+    public static void setUserUniqueID(@Nullable final String id, @Nullable final String type) {
         gAppLogInstance.setUserUniqueID(id, type);
     }
 
@@ -200,23 +202,9 @@ public final class AppLog {
     }
 
     /**
-     * 设置用于激活接口添加自定义字段的接口
-     */
-    public static void setActiveCustomParams(IActiveCustomParamsCallback callback) {
-        gAppLogInstance.setActiveCustomParams(callback);
-    }
-
-    /**
-     * 查询激活的自定义参数接口
-     */
-    public static IActiveCustomParamsCallback getActiveCustomParams() {
-        return gAppLogInstance.getActiveCustomParams();
-    }
-
-    /**
      * add touch point header
      */
-    public static void setTouchPoint(String touchPoint) {
+    public static void setTouchPoint(@NonNull String touchPoint) {
         gAppLogInstance.setTouchPoint(touchPoint);
     }
 
@@ -252,9 +240,15 @@ public final class AppLog {
         gAppLogInstance.setExternalAbVersion(version);
     }
 
+    @Nullable
+    public static String getExternalAbVersion() {
+        return gAppLogInstance.getExternalAbVersion();
+    }
+
     /**
      * 获取ab_sdk_version
      */
+    @NonNull
     public static String getAbSdkVersion() {
         return gAppLogInstance.getAbSdkVersion();
     }
@@ -262,9 +256,9 @@ public final class AppLog {
     /**
      * 获取AB测试的配置 返回配置的同时，会记录该key对应的vid到已曝光区域 简而言之，调用后，就表明该key对应的实验已曝光
      *
-     * @param key          配置项的健
+     * @param key 配置项的健
      * @param defaultValue 默认值
-     * @param <T>          类型，需是JSON兼容的数据类型
+     * @param <T> 类型，需是JSON兼容的数据类型
      * @return 配置项的值
      */
     @Nullable
@@ -280,11 +274,21 @@ public final class AppLog {
     }
 
     /**
+     * 超时拉取AB实验配置
+     *
+     * @param timeout 超时，单位毫秒
+     * @param callback 拉取回调
+     */
+    public static void pullAbTestConfigs(int timeout, IPullAbTestConfigCallback callback) {
+        gAppLogInstance.pullAbTestConfigs(timeout, callback);
+    }
+
+    /**
      * 设置拉取ab实验间隔毫秒数
      *
      * @param mills 毫秒
      */
-    private static void setPullAbTestConfigsThrottleMills(Long mills) {
+    public static void setPullAbTestConfigsThrottleMills(Long mills) {
         gAppLogInstance.setPullAbTestConfigsThrottleMills(mills);
     }
 
@@ -296,6 +300,7 @@ public final class AppLog {
         return gAppLogInstance.getAid();
     }
 
+    @NonNull
     public static String getAppId() {
         return gAppLogInstance.getAppId();
     }
@@ -314,7 +319,7 @@ public final class AppLog {
      *
      * @param ua ua
      */
-    public static void setUserAgent(final String ua) {
+    public static void setUserAgent(@NonNull final String ua) {
         gAppLogInstance.setUserAgent(ua);
     }
 
@@ -325,7 +330,7 @@ public final class AppLog {
     /**
      * 上报v3事件。
      *
-     * @param event  事件名，应用内需唯一
+     * @param event 事件名，应用内需唯一
      * @param params 事件参数
      */
     public static void onEventV3(@NonNull final String event, @Nullable final JSONObject params) {
@@ -335,7 +340,7 @@ public final class AppLog {
     /**
      * 上报v3事件。
      *
-     * @param event  事件名，应用内需唯一
+     * @param event 事件名，应用内需唯一
      * @param params 事件参数
      */
     public static void onEventV3(
@@ -346,7 +351,7 @@ public final class AppLog {
     /**
      * 上报v3事件
      *
-     * @param event  事件名，应用内需唯一。
+     * @param event 事件名，应用内需唯一。
      * @param params 事件参数
      */
     public static void onEventV3(
@@ -357,7 +362,7 @@ public final class AppLog {
     /**
      * 上报v3事件
      *
-     * @param event  事件名，应用内需唯一。
+     * @param event 事件名，应用内需唯一。
      * @param params 事件参数
      */
     public static void onEventV3(@NonNull final String event, @Nullable final Bundle params) {
@@ -365,8 +370,17 @@ public final class AppLog {
     }
 
     /**
-     * 点播SDK的特殊event
+     * 新建一个事件构造器
+     *
+     * @param event 事件名
+     * @return 事件构建器
+     * @since 6.14.0
      */
+    public static EventBuilder newEvent(@NonNull final String event) {
+        return gAppLogInstance.newEvent(event);
+    }
+
+    /** 点播SDK的特殊event */
     public static void onMiscEvent(@NonNull String logType, @Nullable JSONObject obj) {
         gAppLogInstance.onMiscEvent(logType, obj);
     }
@@ -388,6 +402,7 @@ public final class AppLog {
     /**
      * 返回后台生成的did，如果没有，返回""
      */
+    @NonNull
     public static String getDid() {
         return gAppLogInstance.getDid();
     }
@@ -395,6 +410,7 @@ public final class AppLog {
     /**
      * 返回客户端生成的udid，如果没有，返回"" global版本可能为空
      */
+    @NonNull
     public static String getUdid() {
         return gAppLogInstance.getUdid();
     }
@@ -424,6 +440,17 @@ public final class AppLog {
         gAppLogInstance.removeEventObserver(iEventObserver);
     }
 
+    public static void addEventObserver(IEventObserver iEventObserver,
+                                 IPresetEventObserver iPresetEventObserver) {
+        gAppLogInstance.addEventObserver(iEventObserver, iPresetEventObserver);
+    }
+
+    public static void removeEventObserver(IEventObserver iEventObserver,
+                                    IPresetEventObserver iPresetEventObserver) {
+        gAppLogInstance.removeEventObserver(iEventObserver, iPresetEventObserver);
+    }
+
+
     /**
      * 为{@link AccountCacheHelper}设置新的Account，用于存储信息。 设置后，会将{@link
      * AccountCacheHelper}中原本存储在mCache的信息全部迁移到Account当中
@@ -435,6 +462,7 @@ public final class AppLog {
     /**
      * 返回iid，如果没有，返回""
      */
+    @NonNull
     public static String getIid() {
         return gAppLogInstance.getIid();
     }
@@ -442,6 +470,7 @@ public final class AppLog {
     /**
      * 返回ssid，如果没有，返回""
      */
+    @NonNull
     public static String getSsid() {
         return gAppLogInstance.getSsid();
     }
@@ -449,6 +478,7 @@ public final class AppLog {
     /**
      * UserUniqueId(user_id)，如果没有，返回""
      */
+    @NonNull
     public static String getUserUniqueID() {
         return gAppLogInstance.getUserUniqueID();
     }
@@ -456,6 +486,7 @@ public final class AppLog {
     /**
      * user_id，如果没有，返回""
      */
+    @Nullable
     public static String getUserID() {
         return gAppLogInstance.getUserID();
     }
@@ -463,6 +494,7 @@ public final class AppLog {
     /**
      * clientUdid，如果没有，返回""
      */
+    @NonNull
     public static String getClientUdid() {
         return gAppLogInstance.getClientUdid();
     }
@@ -470,6 +502,7 @@ public final class AppLog {
     /**
      * openUdid，如果没有，返回""
      */
+    @NonNull
     public static String getOpenUdid() {
         return gAppLogInstance.getOpenUdid();
     }
@@ -479,6 +512,14 @@ public final class AppLog {
      */
     public static void setUriRuntime(UriConfig config) {
         gAppLogInstance.setUriRuntime(config);
+    }
+
+    /**
+     * 返回当前最新的 uri 配置
+     */
+    @Nullable
+    public static UriConfig getUriRuntime() {
+        return gAppLogInstance.getUriRuntime();
     }
 
     /**
@@ -505,6 +546,7 @@ public final class AppLog {
         gAppLogInstance.removeAllDataObserver();
     }
 
+    @NonNull
     public static INetworkClient getNetClient() {
         return gAppLogInstance.getNetClient();
     }
@@ -512,8 +554,7 @@ public final class AppLog {
     /**
      * 获取header，header内容更新方式为引用替换，可以放心遍历获取字段 如需要修改header字段，请copy后再处理
      */
-    public static @Nullable
-    JSONObject getHeader() {
+    public static @Nullable JSONObject getHeader() {
         return gAppLogInstance.getHeader();
     }
 
@@ -528,32 +569,23 @@ public final class AppLog {
         return gAppLogInstance.isNewUser();
     }
 
-    public static void onResume(Context context) {
+    public static void onResume(@NonNull Context context) {
         gAppLogInstance.onResume(context);
     }
 
-    public static void onPause(Context context) {
+    public static void onPause(@NonNull Context context) {
         gAppLogInstance.onPause(context);
     }
 
     /**
      * must call in main thread from Activity.onResume().
      */
-    public static void onActivityResumed(Activity activity, int hashCode) {
+    public static void onActivityResumed(@NonNull Activity activity, int hashCode) {
         gAppLogInstance.onActivityResumed(activity, hashCode);
     }
 
     public static void onActivityPause() {
         gAppLogInstance.onActivityPause();
-    }
-
-    public static void registerHeaderCustomCallback(
-            IHeaderCustomTimelyCallback customTimelyCallback) {
-        gAppLogInstance.registerHeaderCustomCallback(customTimelyCallback);
-    }
-
-    public static IHeaderCustomTimelyCallback getHeaderCustomCallback() {
-        return gAppLogInstance.getHeaderCustomCallback();
     }
 
     /**
@@ -574,7 +606,7 @@ public final class AppLog {
         gAppLogInstance.userProfileSync(jsonObject, callback);
     }
 
-    public static void startSimulator(final String cookie) {
+    public static void startSimulator(@NonNull final String cookie) {
         gAppLogInstance.startSimulator(cookie);
     }
 
@@ -615,6 +647,7 @@ public final class AppLog {
         return gAppLogInstance.getRequestHeader();
     }
 
+    @NonNull
     public static String getSessionId() {
         return gAppLogInstance.getSessionId();
     }
@@ -649,6 +682,7 @@ public final class AppLog {
     /**
      * 获取sdk版本号
      */
+    @NonNull
     public static String getSdkVersion() {
         return gAppLogInstance.getSdkVersion();
     }
@@ -656,6 +690,7 @@ public final class AppLog {
     /**
      * 获取所有ab配置
      */
+    @NonNull
     public static JSONObject getAllAbTestConfigs() {
         return gAppLogInstance.getAllAbTestConfigs();
     }
@@ -675,7 +710,7 @@ public final class AppLog {
      * 设置一个view的id
      *
      * @param view View
-     * @param id   string
+     * @param id string
      * @usage: AppLog.setViewId(View view, String viewId)
      */
     public static void setViewId(View view, String id) {
@@ -686,7 +721,7 @@ public final class AppLog {
      * 设置一个dialog view的id
      *
      * @param dialog Dialog
-     * @param id     string
+     * @param id string
      * @usage: AppLog.setViewId(Dialog dialog, String viewId)
      */
     public static void setViewId(Dialog dialog, String id) {
@@ -697,7 +732,7 @@ public final class AppLog {
      * 设置一个alert dialog view的id
      *
      * @param alertDialog Object
-     * @param id          string
+     * @param id string
      * @usage: AppLog.setViewId(AlertDialog dialog, String viewId)
      */
     public static void setViewId(Object alertDialog, String id) {
@@ -707,7 +742,7 @@ public final class AppLog {
     /**
      * 设置view的属性
      *
-     * @param view       View
+     * @param view View
      * @param properties JSON
      */
     public static void setViewProperties(View view, JSONObject properties) {
@@ -783,7 +818,7 @@ public final class AppLog {
     /**
      * 手动埋点页面
      *
-     * @param fragment   android.app.Fragment
+     * @param fragment android.app.Fragment
      * @param properties 自定义属性
      */
     public static void trackPage(Object fragment, JSONObject properties) {
@@ -802,7 +837,7 @@ public final class AppLog {
     /**
      * 手动埋点页面
      *
-     * @param activity   Activity
+     * @param activity Activity
      * @param properties 自定义属性
      */
     public static void trackPage(Activity activity, JSONObject properties) {
@@ -821,7 +856,7 @@ public final class AppLog {
     /**
      * 手动埋点view点击事件
      *
-     * @param view       View
+     * @param view View
      * @param properties JSON
      */
     public static void trackClick(View view, JSONObject properties) {
@@ -841,17 +876,17 @@ public final class AppLog {
      * 初始化H5的桥接器（当无法自动注入时可以手动桥接）
      *
      * @param webView WebView
-     * @param url     访问的url
+     * @param url 访问的url
      */
-    public static void initH5Bridge(View webView, String url) {
+    public static void initH5Bridge(@NonNull View webView, @NonNull String url) {
         gAppLogInstance.initH5Bridge(webView, url);
     }
 
     /**
      * 设置GPS坐标
      *
-     * @param longitude           经度
-     * @param latitude            纬度
+     * @param longitude 经度
+     * @param latitude 纬度
      * @param geoCoordinateSystem 坐标系
      */
     public static void setGPSLocation(float longitude, float latitude, String geoCoordinateSystem) {
@@ -890,7 +925,7 @@ public final class AppLog {
     /**
      * 结束采集时长事件
      *
-     * @param eventName  事件名
+     * @param eventName 事件名
      * @param properties 属性
      */
     public static void stopDurationEvent(String eventName, JSONObject properties) {
@@ -906,17 +941,38 @@ public final class AppLog {
         return gAppLogInstance.getViewExposureManager();
     }
 
-    /**
-     * 清除DB中的所有数据
-     */
+    /** 清除DB中的所有数据 */
+    @WorkerThread
     public static void clearDb() {
         gAppLogInstance.clearDb();
     }
 
     /**
-     * 强制打印DEBUG日志，请在init之后调用
+     * 初始化WebView Bridge
+     *
+     * @param view webview
+     * @param url url
      */
-    public static void forcePrintDebugLog() {
-        TLog.DEBUG = true;
+    public static void initWebViewBridge(@NonNull View view, @NonNull String url) {
+        gAppLogInstance.initWebViewBridge(view, url);
+    }
+
+    /**
+     * 用户多口径，绑定 ID
+     * @param identities
+     * @param callback
+     * @since 6.14.0
+     */
+    public static void bind(Map<String, String> identities, IDBindCallback callback) {
+        gAppLogInstance.bind(identities, callback);
+    }
+
+    /**
+     * 设置devtools开关
+     *
+     * @param enable true: 开启
+     */
+    public static void setDevToolsEnable(boolean enable) {
+        LogUtils.setEnable(enable);
     }
 }

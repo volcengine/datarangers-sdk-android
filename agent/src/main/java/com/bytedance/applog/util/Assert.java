@@ -3,6 +3,8 @@ package com.bytedance.applog.util;
 
 import android.text.TextUtils;
 
+import com.bytedance.applog.log.LoggerImpl;
+
 /**
  * 检查工具类
  *
@@ -86,6 +88,6 @@ public class Assert {
      * @param message 错误提示
      */
     public static void e(String message) {
-        TLog.e("[Assert failed] " + message, null);
+        LoggerImpl.global().ast("[Assert failed] {}", null, message);
     }
 }

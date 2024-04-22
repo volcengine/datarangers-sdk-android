@@ -18,6 +18,9 @@ import android.widget.TextView;
 import android.widget.ToggleButton;
 
 import com.bytedance.applog.R;
+import com.bytedance.applog.log.LoggerImpl;
+
+import java.util.Collections;
 
 /**
  * 组件有关的工具类
@@ -62,7 +65,8 @@ public class WidgetUtils {
                 return view.getResources().getResourceEntryName(view.getId());
             } catch (Resources.NotFoundException ignored) {
             } catch (Throwable e) {
-                TLog.e(e);
+                LoggerImpl.global()
+                        .error(Collections.singletonList("WidgetUtils"), "Get view id failed", e);
             }
         }
         return "";
@@ -124,7 +128,8 @@ public class WidgetUtils {
         try {
             return view.getClass().getCanonicalName();
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WidgetUtils"), "getCanonicalName failed", e);
         }
         return "";
     }
@@ -149,6 +154,20 @@ public class WidgetUtils {
     }
 
     /**
+     * 判断View是否包含另一个View
+     *
+     * @param parent 父
+     * @param child 子
+     * @return true 包含
+     */
+    public static boolean isParentView(View parent, View child) {
+        if (null == parent || null == child) {
+            return false;
+        }
+        return null != parent.findViewById(child.getId());
+    }
+
+    /**
      * 判断是否为tabview
      *
      * @param tabView View
@@ -163,7 +182,8 @@ public class WidgetUtils {
             return currentTabViewClass != null
                     && currentTabViewClass.isAssignableFrom(tabView.getClass());
         } catch (Throwable e) {
-            TLog.e(e);
+            LoggerImpl.global()
+                    .error(Collections.singletonList("WidgetUtils"), "Check isTabView failed", e);
         }
         return false;
     }

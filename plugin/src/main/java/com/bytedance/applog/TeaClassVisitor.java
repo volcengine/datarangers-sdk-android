@@ -1,10 +1,11 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog;
 
+import com.bytedance.applog.util.AsmUtils;
+
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.AdviceAdapter;
 
 import java.util.Arrays;
@@ -17,11 +18,17 @@ import java.util.List;
  */
 class TeaClassVisitor extends ClassVisitor {
 
-    /** 默认过滤前缀数组 */
+    /**
+     * 默认过滤前缀数组
+     */
     private static final List<String> DEFAULT_EXCLUDE_CLASS_PREFIX_ARRAY =
-            Arrays.asList("com/bytedance/applog", "com/bytedance/dr", "com/tencent/smtt/sdk");
+            Arrays.asList(
+                    "com/bytedance/applog/",
+                    "com/bytedance/bdtracker/",
+                    "com/bytedance/dr/",
+                    "com/tencent/smtt/sdk/",
+                    "com/tencent/tinker/");
 
-    private static final int ASM_API = Opcodes.ASM9;
     private String mClassName;
     private HashMap<String, MethodChanger> mClassMethodChangers;
     private HashMap<String, MethodChanger> mInterfaceMethodChangers;
@@ -30,7 +37,7 @@ class TeaClassVisitor extends ClassVisitor {
     private final HashMap<String, MethodChanger> mNeedToHookForLambda = new HashMap<>();
 
     TeaClassVisitor(final ClassWriter writer) {
-        super(ASM_API, writer);
+        super(AsmUtils.getMaxApi(), writer);
     }
 
     /**
@@ -69,6 +76,10 @@ class TeaClassVisitor extends ClassVisitor {
             return;
         }
 
+        if (TeaTransform.DISABLE_AUTO_TRACK) {
+            return;
+        }
+
         mClassMethodChangers = MethodChanger.findChangersForClass(superName);
         mInterfaceMethodChangers = MethodChanger.findChangersForInterface(interfaces);
     }
@@ -89,6 +100,10 @@ class TeaClassVisitor extends ClassVisitor {
         }
 
         if (!isClzIncluded(mClassName)) {
+            return mv;
+        }
+
+        if (TeaTransform.DISABLE_AUTO_TRACK) {
             return mv;
         }
 
@@ -136,7 +151,7 @@ class TeaClassVisitor extends ClassVisitor {
                 final int access,
                 final String name,
                 final String desc) {
-            super(ASM_API, mv, access, name, desc);
+            super(AsmUtils.getMaxApi(), mv, access, name, desc);
             mChanger = changer;
             mClass = clasz;
         }

@@ -21,6 +21,8 @@ import org.objectweb.asm.ClassWriter;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -49,10 +51,14 @@ class TeaTransform extends Transform {
     /** 埋点黑名单 */
     public static Iterable<String> TRACK_BLACK_LIST;
 
+    public static boolean AUTO_INJECT_WEBVIEW_BRIDGE = true;
+
+    public static boolean DISABLE_AUTO_TRACK = false;
+
     private final Project mProject;
 
     /** 忽略类的前缀列表 */
-    private List<String> ignoreClassPrefix = new ArrayList<>();
+    private final List<String> ignoreClassPrefix = new ArrayList<>();
 
     @Override
     public String getName() {
@@ -81,13 +87,13 @@ class TeaTransform extends Transform {
     @Override
     public void transform(TransformInvocation invocation) {
         try {
-            Log.i("TeaTransform begin.");
-            BLACK_LIST = mProject.getExtensions().getByType(TeaExtension.class).blackList;
+            Log.i("TeaTransform begin");
+            TeaExtension extension = mProject.getExtensions().getByType(TeaExtension.class);
+            BLACK_LIST = extension.blackList;
             if (null != BLACK_LIST && BLACK_LIST.iterator().hasNext()) {
                 Log.i("Transform black list: " + String.join(",", BLACK_LIST));
             }
-            TRACK_BLACK_LIST =
-                    mProject.getExtensions().getByType(TeaExtension.class).trackBlackList;
+            TRACK_BLACK_LIST = extension.trackBlackList;
             if (null != TRACK_BLACK_LIST && TRACK_BLACK_LIST.iterator().hasNext()) {
                 Log.i("Track black list: " + String.join(",", TRACK_BLACK_LIST));
 
@@ -95,7 +101,14 @@ class TeaTransform extends Transform {
                 if (isInTrackBlackList("OAID")) {
                     ignoreClassPrefix.add("com/bytedance/dr/aidl");
                     ignoreClassPrefix.add("com/bytedance/dr/impl");
+                    ignoreClassPrefix.add("com/bytedance/dr/honor");
                 }
+            }
+            if (null != extension.autoInjectWebViewBridge) {
+                AUTO_INJECT_WEBVIEW_BRIDGE = extension.autoInjectWebViewBridge;
+            }
+            if (null != extension.disableAutoTrack) {
+                DISABLE_AUTO_TRACK = extension.disableAutoTrack;
             }
             for (TransformInput input : invocation.getInputs()) {
                 for (DirectoryInput direct : input.getDirectoryInputs()) {
@@ -125,7 +138,7 @@ class TeaTransform extends Transform {
         } catch (Throwable e) {
             Log.e(e);
         } finally {
-            Log.i("TeaTransform end.");
+            Log.i("TeaTransform end");
         }
     }
 
@@ -196,7 +209,16 @@ class TeaTransform extends Transform {
                 try (InputStream is = jf.getInputStream(zipEntry)) {
                     jos.putNextEntry(zipEntry);
                     if (isSuspectClassName(entryName)) {
-                        processClass(is, jos);
+                        // 这里也要处理lambda表达式
+                        ByteArrayOutputStream tempBos = new ByteArrayOutputStream();
+                        HashMap<String, MethodChanger> lambdaMethodsMap = processClass(is, tempBos);
+                        if (null != lambdaMethodsMap && lambdaMethodsMap.size() > 0) {
+                            ByteArrayInputStream lambdaIns =
+                                    new ByteArrayInputStream(tempBos.toByteArray());
+                            tempBos = new ByteArrayOutputStream();
+                            processClassForLambda(lambdaMethodsMap, lambdaIns, tempBos);
+                        }
+                        IOUtils.copy(new ByteArrayInputStream(tempBos.toByteArray()), jos);
                     } else {
                         IOUtils.copy(is, jos);
                     }

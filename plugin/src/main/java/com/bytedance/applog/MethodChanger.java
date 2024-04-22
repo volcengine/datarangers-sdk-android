@@ -112,15 +112,6 @@ class MethodChanger {
             "(Landroid/view/MenuItem;)Z",
             "onMenuItemClick"
         },
-        //            {"android/view/View$OnLongClickListener", "(Landroid/view/View;)Z",
-        // "onLongClick"},
-        //            {"android/widget/AdapterView$OnItemLongClickListener",
-        //                    "(Landroid/widget/AdapterView;Landroid/view/View;IJ)Z",
-        // "onItemLongClick"},
-
-        //            {"android/location/LocationListener", "(Landroid/location/Location;)V",
-        // "onLocationChanged"},
-
     };
 
     private static final int[] I_ARGS = {
@@ -147,25 +138,25 @@ class MethodChanger {
                     "android/support/v4/app/Fragment",
                     "()V",
                     "onResume",
-                    "(Landroid/support/v4/app/Fragment;)V"
+                    "(Ljava/lang/Object;)V"
                 },
                 {
                     "android/support/v4/app/Fragment",
                     "()V",
                     "onPause",
-                    "(Landroid/support/v4/app/Fragment;)V"
+                    "(Ljava/lang/Object;)V"
                 },
                 {
                     "android/support/v4/app/Fragment",
                     "(Z)V",
                     "onHiddenChanged",
-                    "(Landroid/support/v4/app/Fragment;Z)V"
+                    "(Ljava/lang/Object;Z)V"
                 },
                 {
                     "android/support/v4/app/Fragment",
                     "(Z)V",
                     "setUserVisibleHint",
-                    "(Landroid/support/v4/app/Fragment;Z)V"
+                    "(Ljava/lang/Object;Z)V"
                 },
                 {"android/app/Fragment", "()V", "onResume", "(Landroid/app/Fragment;)V"},
                 {"android/app/Fragment", "()V", "onPause", "(Landroid/app/Fragment;)V"},

@@ -1,4 +1,3 @@
-// Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog;
 
 import org.objectweb.asm.MethodVisitor;
@@ -47,44 +46,6 @@ public class InvokeMethodReplacer {
                     "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
                     "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"
                 }, // webview.loadDataWithBaseURL(String baseUrl, String data,
-                // String mimeType,
-                // String encoding, String failUrl)
-                /////////////////////
-                //                 X5Webview
-                //                {
-                //                    String.valueOf(Opcodes.INVOKEVIRTUAL),
-                //                    "com/tencent/smtt/sdk/WebView",
-                //                    "loadUrl",
-                //                    "(Ljava/lang/String;)V",
-                //                    "(Ljava/lang/Object;Ljava/lang/String;)V",
-                //                }, // webview.loadUrl("")
-                //                {
-                //                    String.valueOf(Opcodes.INVOKEVIRTUAL),
-                //                    "com/tencent/smtt/sdk/WebView",
-                //                    "loadUrl",
-                //                    "(Ljava/lang/String;Ljava/util/Map;)V",
-                //                    "(Ljava/lang/Object;Ljava/lang/String;Ljava/util/Map;)V",
-                //                }, // webview.loadUrl("", headers)
-                //                {
-                //                    String.valueOf(Opcodes.INVOKEVIRTUAL),
-                //                    "com/tencent/smtt/sdk/WebView",
-                //                    "loadData",
-                //                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
-                //
-                // "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"
-                //                }, // webview.loadData(String data, String mimeType, String
-                //                // encoding)
-                //                {
-                //                    String.valueOf(Opcodes.INVOKEVIRTUAL),
-                //                    "com/tencent/smtt/sdk/WebView",
-                //                    "loadDataWithBaseURL",
-                //
-                // "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
-                //
-                // "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"
-                //                }, // webview.loadDataWithBaseURL(String baseUrl, String
-                // data, String mimeType,
-                // String encoding, String failUrl)
             };
 
     public static void replace(
@@ -111,19 +72,22 @@ public class InvokeMethodReplacer {
             String name,
             String descriptor,
             boolean isInterface) {
-        final String targetClass = MethodChanger.TEA_AGENT_CLASS;
-        for (String[] method : METHODS) {
-            // 签名一致
-            boolean needAddCallback =
-                    TeaClassVisitor.isClzIncluded(clz)
-                            && !Objects.equals(clz, targetClass)
-                            && String.valueOf(opcode).equals(method[0])
-                            && name.equals(method[2])
-                            && descriptor.equals(method[3]);
-            if (needAddCallback) {
-                // 插入调用前
-                callback.visitMethodInsn(Opcodes.INVOKESTATIC, targetClass, name, method[4], false);
-                return;
+        if (TeaTransform.AUTO_INJECT_WEBVIEW_BRIDGE) {
+            final String targetClass = MethodChanger.TEA_AGENT_CLASS;
+            for (String[] method : METHODS) {
+                // 签名一致
+                boolean needAddCallback =
+                        TeaClassVisitor.isClzIncluded(clz)
+                                && !Objects.equals(clz, targetClass)
+                                && String.valueOf(opcode).equals(method[0])
+                                && name.equals(method[2])
+                                && descriptor.equals(method[3]);
+                if (needAddCallback) {
+                    // 插入调用前
+                    callback.visitMethodInsn(
+                            Opcodes.INVOKESTATIC, targetClass, name, method[4], false);
+                    return;
+                }
             }
         }
 

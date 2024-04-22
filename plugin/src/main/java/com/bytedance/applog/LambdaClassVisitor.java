@@ -1,10 +1,11 @@
 // Copyright 2022 Beijing Volcano Engine Technology Ltd. All Rights Reserved.
 package com.bytedance.applog;
 
+import com.bytedance.applog.util.AsmUtils;
+
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.AdviceAdapter;
 
 import java.util.ArrayList;
@@ -15,16 +16,12 @@ import java.util.regex.Pattern;
 
 /** classVisitor for lambda method Created by lixiao on 2020/8/19. */
 class LambdaClassVisitor extends ClassVisitor {
-
-    private static final int ASM_API = Opcodes.ASM7;
-
-    private String mClassName;
     // key is method + desc
     private final HashMap<String, MethodChanger> mNeedToHookForLambda;
 
     LambdaClassVisitor(
             final ClassWriter writer, HashMap<String, MethodChanger> needToHookForLambda) {
-        super(ASM_API, writer);
+        super(AsmUtils.getMaxApi(), writer);
         mNeedToHookForLambda = needToHookForLambda;
     }
 
@@ -37,7 +34,6 @@ class LambdaClassVisitor extends ClassVisitor {
             final String superName,
             final String[] interfaces) {
         super.visit(version, access, name, signature, superName, interfaces);
-        mClassName = name;
     }
 
     @Override
@@ -71,7 +67,7 @@ class LambdaClassVisitor extends ClassVisitor {
                 final int access,
                 final String name,
                 final String desc) {
-            super(ASM_API, mv, access, name, desc);
+            super(AsmUtils.getMaxApi(), mv, access, name, desc);
             mChanger = changer;
             mClass = clazz;
             mDesc = desc;

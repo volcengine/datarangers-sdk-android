@@ -4,9 +4,10 @@ package com.bytedance.applog;
 import static org.objectweb.asm.Opcodes.ACONST_NULL;
 import static org.objectweb.asm.Opcodes.ARETURN;
 
+import com.bytedance.applog.util.AsmUtils;
+
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 
 /**
  * 过滤黑名单的函数变更器
@@ -79,13 +80,20 @@ public class BlackMethodChanger extends MethodVisitor {
                     "getOperatorMccMnc",
                     "(Landroid/content/Context;)Ljava/lang/String;",
                 }, // HardwareUtils.getOperatorMccMnc(context)
+                {
+                     ReturnType.NULL.name(),
+                     "CLIPBOARD",
+                     "com/bytedance/applog/alink/util/LinkUtils",
+                     "getParamFromClipboard",
+                     "(Landroid/content/Context;)Lorg/json/JSONObject;"
+                }, // LinkUtils.getParamFromClipboard(context)
             };
 
     /** 返回值类型 */
     private final ReturnType returnType;
 
     public BlackMethodChanger(MethodVisitor mv, ReturnType returnType) {
-        super(Opcodes.ASM7, mv);
+        super(AsmUtils.getMaxApi(), mv);
         this.returnType = returnType;
     }
 

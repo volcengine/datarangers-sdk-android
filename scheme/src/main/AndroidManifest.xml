@@ -1,9 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.bytedance.applog.scheme">
+
     <application>
         <activity
-            android:name="com.bytedance.applog.util.SimulateLaunchActivity"
-            android:theme="@style/Theme.AppCompat.Light"
+            android:name="com.bytedance.applog.simulate.SimulateLaunchActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

@@ -62,7 +62,7 @@ dependencies {
     implementation project(path: ':agent')
     implementation project(path: ':scheme')
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.3.61'
-    debugImplementation 'com.bytedance.applog:RangersAppLog-DevTools:3.4.4-alpha.4'
+    debugImplementation 'com.bytedance.applog:RangersAppLog-DevTools:3.4.4'
 }
 
 apply plugin: 'com.bytedance.std.tracker'

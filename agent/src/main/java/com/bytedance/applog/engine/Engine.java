@@ -118,6 +118,7 @@ public class Engine implements Callback, Comparator<BaseData> {
     /** 缓存对象 */
     private final AppLogCache appLogCache;
     private long mRealFailTs;
+    private volatile boolean isRealTimeEventEnabled = false;
 
     /**
      * 生命钩子
@@ -333,6 +334,7 @@ public class Engine implements Callback, Comparator<BaseData> {
                 if (!trackEventDisabled) {
                     mSender = new Sender(this);
                     mWorkers.add(mSender);
+                    isRealTimeEventEnabled = true;
                 }
 
                 UriConfig uri = getUriConfig();
@@ -744,23 +746,26 @@ public class Engine implements Callback, Comparator<BaseData> {
     }
 
     private void filterRealTimeEvent(final List<BaseData> saveData) {
-        if (mDevice.isHeaderReady()
-                && System.currentTimeMillis() - mRealFailTs >= REAL_FAIL_INTERVAL) {
-            final List<BaseData> realData = mConfig.filterRealTime(saveData);
-            if (realData != null && realData.size() > 0) {
-                if (realData.size() <= PackV2.LIMIT_EVENT_COUNT) {
-                    sendRealTimeEvent(realData);
-                } else {
-                    int packCount = realData.size() / PackV2.LIMIT_EVENT_COUNT
-                            + ((realData.size() % PackV2.LIMIT_EVENT_COUNT == 0) ? 0 : 1);
-                    for (int i = 0; i < packCount; i++) {
-                        int start = i * PackV2.LIMIT_EVENT_COUNT;
-                        int end = Math.min(PackV2.LIMIT_EVENT_COUNT + start, realData.size());
-                        sendRealTimeEvent(realData.subList(start, end));
+        if (isRealTimeEventEnabled) {
+            if (mDevice.isHeaderReady()
+                    && System.currentTimeMillis() - mRealFailTs >= REAL_FAIL_INTERVAL) {
+                final List<BaseData> realData = mConfig.filterRealTime(saveData);
+                if (realData != null && realData.size() > 0) {
+                    if (realData.size() <= PackV2.LIMIT_EVENT_COUNT) {
+                        sendRealTimeEvent(realData);
+                    } else {
+                        int packCount = realData.size() / PackV2.LIMIT_EVENT_COUNT
+                                + ((realData.size() % PackV2.LIMIT_EVENT_COUNT == 0) ? 0 : 1);
+                        for (int i = 0; i < packCount; i++) {
+                            int start = i * PackV2.LIMIT_EVENT_COUNT;
+                            int end = Math.min(PackV2.LIMIT_EVENT_COUNT + start, realData.size());
+                            sendRealTimeEvent(realData.subList(start, end));
+                        }
                     }
                 }
             }
-
+        } else {
+            getAppLog().getLogger().warn("can't not use realtime event");
         }
     }
 
@@ -773,6 +778,7 @@ public class Engine implements Callback, Comparator<BaseData> {
         TTExecutors.getNormalExecutor().execute(new Runnable() {
             @Override
             public void run() {
+                Sender sender = mSender;
                 if (realData != null && realData.size() > 0) {
                     PackV2 pack = new PackV2();
                     pack.setHeader(mDevice.getHeader());
@@ -787,7 +793,7 @@ public class Engine implements Callback, Comparator<BaseData> {
                     pack.reloadSsidFromEvent();
                     pack.reloadUuidTypeFromEvent();
                     pack.writePackToData();
-                    if (mSender.singlePackSend(pack)) {
+                    if (sender != null && sender.singlePackSend(pack)) {
                         mRealFailTs = 0;
                         getDbStoreV2().notifyEventV3Observer(realData);
                     } else {

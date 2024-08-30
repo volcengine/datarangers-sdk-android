@@ -166,25 +166,27 @@ class Register extends BaseWorker {
 
                 // 发送数据到devtools
                 final String finalBdDid = bdDid;
-                LogUtils.sendJsonFetcher(
-                        "device_register_end",
-                        new EventBus.DataFetcher() {
-                            @Override
-                            public Object fetch() {
-                                JSONObject data = new JSONObject();
-                                try {
-                                    data.put("appId", appLogInstance.getAppId());
-                                    data.put("did", deviceId);
-                                    data.put("installId", installId);
-                                    data.put("ssid", ssid);
-                                    data.put("bdDid", finalBdDid);
-                                    data.put("uuid", newUuid);
-                                    data.put("uuidType", newUuidType);
-                                } catch (Throwable ignored) {
+                if (!LogUtils.isDisabled()) {
+                    LogUtils.sendJsonFetcher(
+                            "device_register_end",
+                            new EventBus.DataFetcher() {
+                                @Override
+                                public Object fetch() {
+                                    JSONObject data = new JSONObject();
+                                    try {
+                                        data.put("appId", appLogInstance.getAppId());
+                                        data.put("did", deviceId);
+                                        data.put("installId", installId);
+                                        data.put("ssid", ssid);
+                                        data.put("bdDid", finalBdDid);
+                                        data.put("uuid", newUuid);
+                                        data.put("uuidType", newUuidType);
+                                    } catch (Throwable ignored) {
+                                    }
+                                    return data;
                                 }
-                                return data;
-                            }
-                        });
+                            });
+                }
             }
             return save;
         }

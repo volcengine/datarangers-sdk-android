@@ -22,7 +22,6 @@ import com.bytedance.applog.util.Utils;
 
 import org.json.JSONObject;
 
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.UUID;
@@ -145,22 +144,24 @@ public class Session {
 
         mId = UUID.randomUUID().toString();
 
-        LogUtils.sendJsonFetcher(
-                "session_start",
-                new EventBus.DataFetcher() {
-                    @Override
-                    public Object fetch() {
-                        JSONObject data = new JSONObject();
-                        try {
-                            data.put("appId", appLogInstance.getAppId());
-                            data.put("sessionId", mId);
-                            data.put("isBackground", !hasUi);
-                            data.put("newLaunch", ts != -1);
-                        } catch (Throwable ignored) {
+        if (!LogUtils.isDisabled()) {
+            LogUtils.sendJsonFetcher(
+                    "session_start",
+                    new EventBus.DataFetcher() {
+                        @Override
+                        public Object fetch() {
+                            JSONObject data = new JSONObject();
+                            try {
+                                data.put("appId", appLogInstance.getAppId());
+                                data.put("sessionId", mId);
+                                data.put("isBackground", !hasUi);
+                                data.put("newLaunch", ts != -1);
+                            } catch (Throwable ignored) {
+                            }
+                            return data;
                         }
-                        return data;
-                    }
-                });
+                    });
+        }
 
         if (hasUi && !mEngine.mUuidChanged && TextUtils.isEmpty(mLastFgId)) {
             mLastFgId = mId;

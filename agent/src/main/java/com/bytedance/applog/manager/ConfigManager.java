@@ -25,6 +25,7 @@ import com.bytedance.applog.store.EventV3;
 import com.bytedance.applog.store.SharedPreferenceCacheHelper;
 import com.bytedance.applog.util.JsonUtils;
 import com.bytedance.applog.util.Utils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -356,54 +357,56 @@ public class ConfigManager {
         if (getConfigTs() <= 0) {
             return;
         }
-        LogUtils.sendJsonFetcher(
-                "remote_settings",
-                new EventBus.DataFetcher() {
-                    @Override
-                    public Object fetch() {
-                        JSONObject json = new JSONObject();
-                        JSONObject cacheConfig = new JSONObject();
-                        try {
-                            json.put("appId", appLogInstance.getAppId());
+        if (!LogUtils.isDisabled()) {
+            LogUtils.sendJsonFetcher(
+                    "remote_settings",
+                    new EventBus.DataFetcher() {
+                        @Override
+                        public Object fetch() {
+                            JSONObject json = new JSONObject();
+                            JSONObject cacheConfig = new JSONObject();
+                            try {
+                                json.put("appId", appLogInstance.getAppId());
 
-                            long V_SP_KEY_SESSION_INTERVAL =
-                                    mSp.getLong(SP_KEY_SESSION_INTERVAL, 0);
-                            cacheConfig.put(
-                                    "后台会话时长",
-                                    V_SP_KEY_SESSION_INTERVAL > 0
-                                            ? (V_SP_KEY_SESSION_INTERVAL + "ms")
-                                            : "--");
-                            long V_SP_KEY_EVENT_INTERVAL = mSp.getLong(SP_KEY_EVENT_INTERVAL, 0);
-                            cacheConfig.put(
-                                    "事件上报周期",
-                                    V_SP_KEY_EVENT_INTERVAL > 0
-                                            ? (V_SP_KEY_EVENT_INTERVAL + "ms")
-                                            : "--");
-                            long V_KEY_ABTEST_INTERVAL = mSp.getLong(KEY_ABTEST_INTERVAL, 0);
-                            cacheConfig.put(
-                                    "AB实验更新周期",
-                                    V_KEY_ABTEST_INTERVAL > 0
-                                            ? (V_KEY_ABTEST_INTERVAL + "ms")
-                                            : "--");
-                            cacheConfig.put("全埋点开关", mSp.getBoolean(KEY_BAV_ENABLE, false));
-                            cacheConfig.put("AB实验开关", mSp.getBoolean(KEY_BAV_AB_ENABLE, false));
-                            cacheConfig.put("实时埋点事件", mSp.getString(KEY_REAL_TIME_EVENTS, "[]"));
-                            long V_SP_KEY_CONFIG_INTERVAL = mSp.getLong(SP_KEY_CONFIG_INTERVAL, 0);
-                            cacheConfig.put(
-                                    "服务端配置更新周期",
-                                    V_SP_KEY_CONFIG_INTERVAL > 0
-                                            ? (V_SP_KEY_CONFIG_INTERVAL + "ms")
-                                            : "--");
-                            int eventSize = mSp.getInt(SP_KEY_EVENT_SIZE, -1);
-                            cacheConfig.put("事件累计上报数量", (eventSize >= 0 ? eventSize : "--") + "条");
-                            cacheConfig.put("禁止采集的敏感字段", mSp.getString(KEY_SENSITIVE_FIELDS, "--"));
-                            cacheConfig.put("服务端黑名单事件", mBlockSetV3);
-                            json.put("config", cacheConfig);
-                        } catch (Throwable ignored) {
+                                long V_SP_KEY_SESSION_INTERVAL =
+                                        mSp.getLong(SP_KEY_SESSION_INTERVAL, 0);
+                                cacheConfig.put(
+                                        "后台会话时长",
+                                        V_SP_KEY_SESSION_INTERVAL > 0
+                                                ? (V_SP_KEY_SESSION_INTERVAL + "ms")
+                                                : "--");
+                                long V_SP_KEY_EVENT_INTERVAL = mSp.getLong(SP_KEY_EVENT_INTERVAL, 0);
+                                cacheConfig.put(
+                                        "事件上报周期",
+                                        V_SP_KEY_EVENT_INTERVAL > 0
+                                                ? (V_SP_KEY_EVENT_INTERVAL + "ms")
+                                                : "--");
+                                long V_KEY_ABTEST_INTERVAL = mSp.getLong(KEY_ABTEST_INTERVAL, 0);
+                                cacheConfig.put(
+                                        "AB实验更新周期",
+                                        V_KEY_ABTEST_INTERVAL > 0
+                                                ? (V_KEY_ABTEST_INTERVAL + "ms")
+                                                : "--");
+                                cacheConfig.put("全埋点开关", mSp.getBoolean(KEY_BAV_ENABLE, false));
+                                cacheConfig.put("AB实验开关", mSp.getBoolean(KEY_BAV_AB_ENABLE, false));
+                                cacheConfig.put("实时埋点事件", mSp.getString(KEY_REAL_TIME_EVENTS, "[]"));
+                                long V_SP_KEY_CONFIG_INTERVAL = mSp.getLong(SP_KEY_CONFIG_INTERVAL, 0);
+                                cacheConfig.put(
+                                        "服务端配置更新周期",
+                                        V_SP_KEY_CONFIG_INTERVAL > 0
+                                                ? (V_SP_KEY_CONFIG_INTERVAL + "ms")
+                                                : "--");
+                                int eventSize = mSp.getInt(SP_KEY_EVENT_SIZE, -1);
+                                cacheConfig.put("事件累计上报数量", (eventSize >= 0 ? eventSize : "--") + "条");
+                                cacheConfig.put("禁止采集的敏感字段", mSp.getString(KEY_SENSITIVE_FIELDS, "--"));
+                                cacheConfig.put("服务端黑名单事件", mBlockSetV3);
+                                json.put("config", cacheConfig);
+                            } catch (Throwable ignored) {
+                            }
+                            return json;
                         }
-                        return json;
-                    }
-                });
+                    });
+        }
     }
 
     public long getConfigTs() {
@@ -551,24 +554,26 @@ public class ConfigManager {
         mCustomSp.edit().putString(CUSTOM_AB_CONFIG, abConfigStr).apply();
         mAbConfig = null;
 
-        // 发送配置
-        LogUtils.sendJsonFetcher(
-                "set_abconfig",
-                new EventBus.DataFetcher() {
-                    @Override
-                    public Object fetch() {
-                        JSONObject data = new JSONObject();
-                        JSONObject c = new JSONObject();
-                        JsonUtils.mergeJsonObject(config, c);
-                        try {
-                            data.put("appId", appLogInstance.getAppId());
-                            data.put("config", c);
-                        } catch (Throwable ignored) {
+        if (!LogUtils.isDisabled()) {
+            // 发送配置
+            LogUtils.sendJsonFetcher(
+                    "set_abconfig",
+                    new EventBus.DataFetcher() {
+                        @Override
+                        public Object fetch() {
+                            JSONObject data = new JSONObject();
+                            JSONObject c = new JSONObject();
+                            JsonUtils.mergeJsonObject(config, c);
+                            try {
+                                data.put("appId", appLogInstance.getAppId());
+                                data.put("config", c);
+                            } catch (Throwable ignored) {
 
+                            }
+                            return data;
                         }
-                        return data;
-                    }
-                });
+                    });
+        }
     }
 
     public JSONObject getAbConfig() {

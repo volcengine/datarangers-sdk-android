@@ -141,7 +141,7 @@ public class LogUtils {
      *
      * @return true:被禁用
      */
-    private static boolean isDisabled() {
+    public static boolean isDisabled() {
         return !buzEnabled;
     }
 }

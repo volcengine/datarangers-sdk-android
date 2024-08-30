@@ -333,21 +333,22 @@ public class Api {
                 long localTime = System.currentTimeMillis() / 1000L;
                 ts.put(KEY_LOCAL_TIME, localTime);
                 mTimeSync = ts;
-
-                LogUtils.sendJsonFetcher(
-                        "server_time_sync",
-                        new EventBus.DataFetcher() {
-                            @Override
-                            public Object fetch() {
-                                JSONObject params = new JSONObject();
-                                JsonUtils.mergeJsonObject(ts, params);
-                                try {
-                                    params.put("appId", appLogInstance.getAppId());
-                                } catch (Throwable ignored) {
+                if (!LogUtils.isDisabled()) {
+                    LogUtils.sendJsonFetcher(
+                            "server_time_sync",
+                            new EventBus.DataFetcher() {
+                                @Override
+                                public Object fetch() {
+                                    JSONObject params = new JSONObject();
+                                    JsonUtils.mergeJsonObject(ts, params);
+                                    try {
+                                        params.put("appId", appLogInstance.getAppId());
+                                    } catch (Throwable ignored) {
+                                    }
+                                    return params;
                                 }
-                                return params;
-                            }
-                        });
+                            });
+                }
             }
         } catch (Exception ignore) {
         }
@@ -931,36 +932,37 @@ public class Api {
             conn.setRequestProperty("Accept-Encoding", "gzip");
 
             final HttpURLConnection finalConn = conn;
-
-            LogUtils.sendJsonFetcher(
-                    "do_request_begin",
-                    new EventBus.DataFetcher() {
-                        @Override
-                        public Object fetch() {
-                            JSONObject json = new JSONObject();
-                            final JSONObject reqHeaderJson = new JSONObject();
-                            try {
-                                Map<String, List<String>> props = finalConn.getRequestProperties();
-                                if (!props.isEmpty()) {
-                                    for (Map.Entry<String, List<String>> entry : props.entrySet()) {
-                                        reqHeaderJson.put(
-                                                entry.getKey(),
-                                                TextUtils.join(",", entry.getValue()));
+            if (!LogUtils.isDisabled()) {
+                LogUtils.sendJsonFetcher(
+                        "do_request_begin",
+                        new EventBus.DataFetcher() {
+                            @Override
+                            public Object fetch() {
+                                JSONObject json = new JSONObject();
+                                final JSONObject reqHeaderJson = new JSONObject();
+                                try {
+                                    Map<String, List<String>> props = finalConn.getRequestProperties();
+                                    if (!props.isEmpty()) {
+                                        for (Map.Entry<String, List<String>> entry : props.entrySet()) {
+                                            reqHeaderJson.put(
+                                                    entry.getKey(),
+                                                    TextUtils.join(",", entry.getValue()));
+                                        }
                                     }
-                                }
-                                json.put("appId", appLogInstance.getAppId());
-                                json.put("nid", requestId);
-                                json.put("url", urlString);
-                                json.put("data", data);
-                                json.put("header", reqHeaderJson);
-                                json.put("method", method);
-                                json.put("time", startTimestamp);
-                            } catch (Throwable ignored) {
+                                    json.put("appId", appLogInstance.getAppId());
+                                    json.put("nid", requestId);
+                                    json.put("url", urlString);
+                                    json.put("data", data);
+                                    json.put("header", reqHeaderJson);
+                                    json.put("method", method);
+                                    json.put("time", startTimestamp);
+                                } catch (Throwable ignored) {
 
+                                }
+                                return json;
                             }
-                            return json;
-                        }
-                    });
+                        });
+            }
 
             byte[] encryptBytes = null;
             if (null != data) {

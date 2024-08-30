@@ -85,21 +85,22 @@ class Configure extends BaseWorker {
                             AbstractEventFilter.parseFilterFromServer(
                                     mEngine.getContext(), spName, config));
                 }
-
-                LogUtils.sendJsonFetcher(
-                        "fetch_log_settings_end",
-                        new EventBus.DataFetcher() {
-                            @Override
-                            public Object fetch() {
-                                JSONObject data = new JSONObject();
-                                JsonUtils.mergeJsonObject(config, data);
-                                try {
-                                    data.put("appId", appLogInstance.getAppId());
-                                } catch (Throwable ignored) {
+                if (!LogUtils.isDisabled()) {
+                    LogUtils.sendJsonFetcher(
+                            "fetch_log_settings_end",
+                            new EventBus.DataFetcher() {
+                                @Override
+                                public Object fetch() {
+                                    JSONObject data = new JSONObject();
+                                    JsonUtils.mergeJsonObject(config, data);
+                                    try {
+                                        data.put("appId", appLogInstance.getAppId());
+                                    } catch (Throwable ignored) {
+                                    }
+                                    return data;
                                 }
-                                return data;
-                            }
-                        });
+                            });
+                }
                 return true;
             }
         }

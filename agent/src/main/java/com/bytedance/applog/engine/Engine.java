@@ -300,22 +300,23 @@ public class Engine implements Callback, Comparator<BaseData> {
                     } else {
                         getAppLog().getLogger().info("AppLog started on secondary process.");
                     }
+                    if (!LogUtils.isDisabled()) {
+                        LogUtils.sendJsonFetcher(
+                                "start_end",
+                                new EventBus.DataFetcher() {
+                                    @Override
+                                    public Object fetch() {
+                                        JSONObject data = new JSONObject();
+                                        try {
+                                            data.put("appId", mAppLogInst.getAppId());
+                                            data.put("isMainProcess", mConfig.isMainProcess());
+                                        } catch (Throwable ignored) {
 
-                    LogUtils.sendJsonFetcher(
-                            "start_end",
-                            new EventBus.DataFetcher() {
-                                @Override
-                                public Object fetch() {
-                                    JSONObject data = new JSONObject();
-                                    try {
-                                        data.put("appId", mAppLogInst.getAppId());
-                                        data.put("isMainProcess", mConfig.isMainProcess());
-                                    } catch (Throwable ignored) {
-
+                                        }
+                                        return data;
                                     }
-                                    return data;
-                                }
-                            });
+                                });
+                    }
                 } else {
                     getAppLog()
                             .getLogger()

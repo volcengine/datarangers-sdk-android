@@ -357,6 +357,9 @@ public class ProfileController implements Handler.Callback {
      * @param success 是否上报成功
      */
     private void sendProfilesUpload2Devtools(final Set<String> eventIds, final boolean success) {
+        if (LogUtils.isDisabled()) {
+            return;
+        }
         if (null == eventIds || eventIds.isEmpty()) {
             return;
         }

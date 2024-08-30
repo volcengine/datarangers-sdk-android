@@ -690,7 +690,7 @@ public final class AppLogInstance implements IAppLogInstance {
     public void setEncryptAndCompress(final boolean enable) {
         sEncryptAndCompress = enable;
 
-        if (Utils.isNotEmpty(appId)) {
+        if (Utils.isNotEmpty(appId) && !LogUtils.isDisabled()) {
             LogUtils.sendJsonFetcher(
                     "update_config",
                     new EventBus.DataFetcher() {
@@ -1149,23 +1149,24 @@ public final class AppLogInstance implements IAppLogInstance {
             return;
         }
         mEngine.setClipboardEnabled(enabled);
-
-        LogUtils.sendJsonFetcher(
-                "update_config",
-                new EventBus.DataFetcher() {
-                    @Override
-                    public Object fetch() {
-                        JSONObject data = new JSONObject();
-                        JSONObject config = new JSONObject();
-                        try {
-                            data.put("appId", appId);
-                            config.put("剪切板开关", enabled);
-                            data.put("config", config);
-                        } catch (Throwable ignored) {
+        if (!LogUtils.isDisabled()) {
+            LogUtils.sendJsonFetcher(
+                    "update_config",
+                    new EventBus.DataFetcher() {
+                        @Override
+                        public Object fetch() {
+                            JSONObject data = new JSONObject();
+                            JSONObject config = new JSONObject();
+                            try {
+                                data.put("appId", appId);
+                                config.put("剪切板开关", enabled);
+                                data.put("config", config);
+                            } catch (Throwable ignored) {
+                            }
+                            return data;
                         }
-                        return data;
-                    }
-                });
+                    });
+        }
     }
 
     @Override
@@ -1657,6 +1658,9 @@ public final class AppLogInstance implements IAppLogInstance {
      * @param config InitConfig
      */
     private void sendConfig2DevTools(final InitConfig config) {
+        if (LogUtils.isDisabled()) {
+            return;
+        }
         LogUtils.sendJsonFetcher(
                 "init_begin",
                 new EventBus.DataFetcher() {

@@ -192,6 +192,9 @@ class Sender extends BaseWorker {
      * @param success 是否上报成功
      */
     private void sendPackUpload2Devtools(final Set<String> eventIds, final boolean success) {
+        if (LogUtils.isDisabled()) {
+            return;
+        }
         if (null == eventIds || eventIds.isEmpty()) {
             return;
         }

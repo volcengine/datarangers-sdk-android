@@ -290,7 +290,7 @@ public class DeviceManager {
             appLogInstance.getDataObserverHolder().onIdLoaded(getBdDid(), getIid(), getSsid());
         }
 
-        if (Utils.isNotEmpty(getSsid())) {
+        if (!LogUtils.isDisabled() && Utils.isNotEmpty(getSsid())) {
             LogUtils.sendJsonFetcher(
                     "local_did_load",
                     new EventBus.DataFetcher() {
@@ -818,22 +818,23 @@ public class DeviceManager {
      */
     private void setHeader(final JSONObject header) {
         mHeader = header;
+        if (!LogUtils.isDisabled()) {
+            LogUtils.sendJsonFetcher(
+                    "set_header",
+                    new EventBus.DataFetcher() {
+                        @Override
+                        public Object fetch() {
+                            JSONObject headerCopy = new JSONObject();
+                            JsonUtils.mergeJsonObject(header, headerCopy);
+                            try {
+                                headerCopy.put("appId", appLogInstance.getAppId());
+                            } catch (Throwable ignored) {
 
-        LogUtils.sendJsonFetcher(
-                "set_header",
-                new EventBus.DataFetcher() {
-                    @Override
-                    public Object fetch() {
-                        JSONObject headerCopy = new JSONObject();
-                        JsonUtils.mergeJsonObject(header, headerCopy);
-                        try {
-                            headerCopy.put("appId", appLogInstance.getAppId());
-                        } catch (Throwable ignored) {
-
+                            }
+                            return headerCopy;
                         }
-                        return headerCopy;
-                    }
-                });
+                    });
+        }
     }
 
     private boolean needSyncFromSub(final BaseLoader loader) {

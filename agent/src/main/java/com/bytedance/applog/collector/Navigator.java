@@ -201,7 +201,7 @@ public class Navigator implements ActivityLifecycleCallbacks {
 
     private void notifyVisibleFragmentPause() {
         for (PageInfo value : sVisibleFragmentCache.values()) {
-            if (value != null ) {
+            if (value != null) {
                 onFragPause(value.fragment.get());
             }
         }
@@ -234,7 +234,7 @@ public class Navigator implements ActivityLifecycleCallbacks {
         page.referPath = null != lastPage ? lastPage.path : "";
         page.properties = properties;
         page.isFragment = isFragment;
-        autoReceivePage(page);
+        autoReceivePage(page, true);
         // 保存最后的页面
         lastPage = page;
         LoggerImpl.global().debug("[Navigator] resumePage page.name：{}", page.name);
@@ -251,11 +251,83 @@ public class Navigator implements ActivityLifecycleCallbacks {
         }
         page.duration = duration;
         page.isFragment = isFragment;
-        autoReceivePage(page);
+        autoReceivePage(page, false);
         LoggerImpl.global().debug("[Navigator] pausePage page.name：{}, duration：{}", page.name, page.duration);
-        // 离开页面事件
-        receivePageLeave(page);
         return page;
+    }
+
+    /**
+     * 采集页面事件
+     *
+     * @param page Page
+     */
+    private static void autoReceivePage(final Page page, boolean isEntryPage) {
+        AppLogHelper.receiveIf(
+                page,
+                new AppLogHelper.AppLogInstanceMatcher() {
+                    @Override
+                    public boolean match(AppLogInstance instance) {
+                        if (!AppLogHelper.isHandleLifecycleMatcher.match(instance)) {
+                            return false;
+                        }
+
+                        return !page.isFragment;
+                    }
+                });
+        if (isEntryPage) {
+            receivePageEntry(page);
+        } else {
+            receivePageLeave(page);
+        }
+    }
+
+    /**
+     * 采集页面进入事件
+     *
+     * @param page Page
+     */
+    private static void receivePageEntry(final Page page) {
+        AppLogHelper.receiveIf(
+                new AppLogHelper.BaseDataLoader() {
+                    @Override
+                    public BaseData load() {
+                        Page p = (Page) page.clone();
+                        JSONObject pJson = p.toPackJson();
+                        JSONObject params = pJson.optJSONObject(BaseData.COL_PARAM);
+                        if (null == params) {
+                            params = new JSONObject();
+                        }
+
+                        EventV3 entryEvent = new EventV3(Page.EVENT_KEY);
+                        entryEvent.setTs(0);
+                        entryEvent.setProperties(params);
+
+                        return entryEvent;
+                    }
+                },
+                new AppLogHelper.AppLogInstanceMatcher() {
+                    @Override
+                    public boolean match(AppLogInstance instance) {
+                        if (!instance.isBavEnabled()) {
+                            return false;
+                        }
+                        if (null != instance.getInitConfig()) {
+                            if (!AutoTrackEventType.hasEventType(instance.getInitConfig().getAutoTrackEventType(),
+                                    AutoTrackEventType.PAGE)) {
+                                return false;
+                            }
+                        }
+                        boolean isMatchPage = true;
+                        if (instance.isAutoTrackPageIgnored(page.clazz)) {
+                            return false;
+                        }
+                        if (page.isFragment) {
+                            isMatchPage = null == instance.getInitConfig()
+                                    || instance.getInitConfig().isAutoTrackFragmentEnabled();
+                        }
+                        return isMatchPage;
+                    }
+                });
     }
 
     /**
@@ -270,20 +342,17 @@ public class Navigator implements ActivityLifecycleCallbacks {
                     public BaseData load() {
                         Page p = (Page) page.clone();
                         JSONObject pJson = p.toPackJson();
-                        // 复制page的param字段
                         JSONObject params = pJson.optJSONObject(BaseData.COL_PARAM);
                         if (null == params) {
                             params = new JSONObject();
                         }
 
-                        // 添加duration字段
                         try {
                             params.put(Api.KEY_PAGE_DURATION, p.duration);
                         } catch (Throwable e) {
                             LoggerImpl.global().error("[Navigator] JSON handle failed", e);
                         }
 
-                        // 转换成一个EventV3事件
                         EventV3 leaveEvent = new EventV3(Api.LEAVE_PAGE_EVENT_NAME);
                         leaveEvent.setTs(0);
                         leaveEvent.setProperties(params);
@@ -294,41 +363,24 @@ public class Navigator implements ActivityLifecycleCallbacks {
                 new AppLogHelper.AppLogInstanceMatcher() {
                     @Override
                     public boolean match(AppLogInstance instance) {
-                        return instance.isBavEnabled()
-                                && null != instance.getInitConfig()
-                                && AutoTrackEventType.hasEventType(
-                                instance.getInitConfig().getAutoTrackEventType(),
-                                AutoTrackEventType.PAGE_LEAVE);
-                    }
-                });
-    }
-
-    /**
-     * 采集页面事件
-     *
-     * @param page Page
-     */
-    private static void autoReceivePage(final Page page) {
-        AppLogHelper.receiveIf(
-                page,
-                new AppLogHelper.AppLogInstanceMatcher() {
-                    @Override
-                    public boolean match(AppLogInstance instance) {
-                        // 过滤未开启全埋点的实例
-                        if (!AppLogHelper.isHandleLifecycleMatcher.match(instance)) {
+                        if (!instance.isBavEnabled()) {
                             return false;
                         }
-                        // 过滤忽略的页面类型
+                        if (null != instance.getInitConfig()) {
+                            if (!AutoTrackEventType.hasEventType(instance.getInitConfig().getAutoTrackEventType(),
+                                    AutoTrackEventType.PAGE_LEAVE)) {
+                                return false;
+                            }
+                        }
+                        boolean isMatchPage = true;
                         if (instance.isAutoTrackPageIgnored(page.clazz)) {
                             return false;
                         }
-
-                        // 处理fragment开关
                         if (page.isFragment) {
-                            return null == instance.getInitConfig()
+                            isMatchPage = null == instance.getInitConfig()
                                     || instance.getInitConfig().isAutoTrackFragmentEnabled();
                         }
-                        return true;
+                        return isMatchPage;
                     }
                 });
     }
